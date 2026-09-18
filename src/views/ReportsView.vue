@@ -502,7 +502,7 @@ function onFileDrop(e) {
     <!-- Modal Xem Chi Tiết Báo Cáo & Cập Nhật Nhanh -->
     <a-modal
       v-model:open="isDetailOpen"
-      width="680px"
+      width="70%"
       class="detail-modal"
       :footer="null"
       @cancel="closeDetail"
