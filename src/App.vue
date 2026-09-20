@@ -7,6 +7,9 @@ import {
   WarningFilled,
   LogoutOutlined,
   LoginOutlined,
+  ExclamationCircleOutlined,
+  CrownFilled,
+  EyeOutlined,
 } from '@ant-design/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useI18n } from './composables/useI18n'
@@ -16,9 +19,11 @@ const route = useRoute()
 const router = useRouter()
 const { theme, toggleTheme } = useTheme()
 const { locale, setLocale, t } = useI18n()
-const { user, isAuthenticated, userInitials, logout } = useAuth()
+const { user, isAuthenticated, isAuthReady, userInitials, isAdmin, logout } = useAuth()
 
 const notificationOpen = ref(false)
+const showLogoutModal = ref(false)
+const isLoggingOut = ref(false)
 
 const isLoginPage = computed(() => route.name === 'login')
 
@@ -28,16 +33,37 @@ const langOptions = [
   { value: 'zh', label: '🇨🇳 中文' },
 ]
 
-async function handleLogout() {
-  if (window.confirm(t('logoutConfirm'))) {
+function handleLogout() {
+  showLogoutModal.value = true
+}
+
+async function confirmLogout() {
+  try {
+    isLoggingOut.value = true
     await logout()
+    showLogoutModal.value = false
     router.push({ name: 'login' })
+  } finally {
+    isLoggingOut.value = false
   }
 }
 </script>
 
 <template>
-  <div class="app-shell">
+  <!-- Màn hình chờ an toàn bảo vệ không nháy giao diện khi kiểm tra auth -->
+  <div v-if="!isAuthReady" class="app-auth-splash">
+    <div class="splash-center-box">
+      <div class="splash-icon-pulse">
+        <WarningFilled />
+      </div>
+      <div class="splash-brand-text">
+        <strong>Sentinel</strong>
+        <span>Khởi tạo hệ thống bảo mật...</span>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="app-shell">
     <!-- Topbar dedicated to Sentinel Anomaly Reporting (ẩn khi ở trang Login) -->
     <header v-if="!isLoginPage" class="app-header">
       <div class="header-left">
@@ -104,6 +130,17 @@ async function handleLogout() {
           </div>
         </div>
 
+        <!-- Role Badge (Admin / Viewer) tách hẳn ra ngoài thành nút riêng trên header -->
+        <a-tooltip v-if="isAuthenticated && user" :title="isAdmin ? t('roleAdmin') : t('roleViewer')">
+          <div
+            class="header-icon-btn header-role-badge"
+            :class="isAdmin ? 'role-crown-badge' : 'role-viewer-badge'"
+          >
+            <CrownFilled v-if="isAdmin" />
+            <EyeOutlined v-else />
+          </div>
+        </a-tooltip>
+
         <!-- User Profile & Logout -->
         <div v-if="isAuthenticated && user" class="profile">
           <img
@@ -115,7 +152,7 @@ async function handleLogout() {
           <div v-else class="avatar">{{ userInitials }}</div>
           <div class="profile-copy">
             <strong>{{ user.displayName || user.email }}</strong>
-            <span>{{ user.email ? user.email.slice(0, 18) + (user.email.length > 18 ? '...' : '') : t('userRole') }}</span>
+            <span class="profile-email">{{ user.email }}</span>
           </div>
 
           <!-- Nút đăng xuất -->
@@ -142,14 +179,69 @@ async function handleLogout() {
       </div>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="content" :class="{ 'content-auth': isLoginPage }">
+    <!-- Main Content Area (cho các trang Dashboard / Reports bên trong) -->
+    <main v-if="!isLoginPage" class="content">
       <router-view v-slot="{ Component }">
         <transition name="page" mode="out-in">
           <component :is="Component" />
         </transition>
       </router-view>
     </main>
+
+    <!-- Màn hình Đăng nhập hiển thị tràn viền 100vw toàn màn hình -->
+    <div v-else class="auth-viewport-wrapper">
+      <router-view />
+    </div>
+
+    <!-- Professional Enterprise Footer -->
+    <footer v-if="!isLoginPage" class="app-footer">
+      <div class="footer-inner">
+        <div class="footer-left">
+          <div class="footer-branding">
+            <span class="footer-status-dot"></span>
+            <span class="footer-brand-title">Sentinel Incident Ops</span>
+            <span class="footer-badge">QC Enterprise</span>
+          </div>
+          <p class="footer-copyright-text">
+            {{ t('footerCopyright') }}
+          </p>
+        </div>
+
+        <div class="footer-right">
+          <div class="footer-meta-row">
+            <span class="footer-build-tag">v2.4.2 Production</span>
+            <span class="footer-sep">·</span>
+            <span class="footer-author-tag">{{ t('footerAuthor') }}</span>
+          </div>
+          <p class="footer-tagline">
+            {{ t('footerSystemTag') }}
+          </p>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Modal Xác nhận Đăng xuất (Ant Design Vue) -->
+    <a-modal
+      v-model:open="showLogoutModal"
+      :title="t('logout')"
+      :ok-text="t('logout')"
+      :cancel-text="t('btnCancel')"
+      ok-type="danger"
+      :confirm-loading="isLoggingOut"
+      class="logout-modal"
+      width="440px"
+      centered
+      @ok="confirmLogout"
+    >
+      <div class="logout-modal-body">
+        <div class="logout-icon-wrapper">
+          <ExclamationCircleOutlined />
+        </div>
+        <div class="logout-modal-info">
+          <div class="logout-modal-title">{{ t('logoutConfirm') }}</div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 

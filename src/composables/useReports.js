@@ -1,4 +1,4 @@
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import {
   collection,
   doc,
@@ -20,112 +20,183 @@ import { db, storage, isFirebaseConfigured } from '../firebase/config'
 import { useAuth } from './useAuth'
 import { useI18n } from './useI18n'
 
-const LOCAL_STORAGE_KEY = 'sentinel_reports_data'
+const LOCAL_STORAGE_KEY = 'sentinel_reports_manufacturing_v3'
+
+export function calculateDefectRate(defectQty, totalQty) {
+  const d = Number(defectQty) || 0
+  const q = Number(totalQty) || 0
+  if (q <= 0) return '0.00%'
+  return ((d / q) * 100).toFixed(2) + '%'
+}
+
+export function getDefectRateLevel(rateStrOrNum) {
+  const rate = typeof rateStrOrNum === 'string' ? parseFloat(rateStrOrNum) : (Number(rateStrOrNum) || 0)
+  if (rate >= 10) return { label: 'Rất cao (>10%)', severity: 'critical', color: 'var(--critical)', bg: 'var(--critical-bg)' }
+  if (rate >= 5) return { label: 'Cao (>5%)', severity: 'high', color: 'var(--high)', bg: 'var(--high-bg)' }
+  if (rate >= 1) return { label: 'Cần lưu ý', severity: 'medium', color: 'var(--medium)', bg: 'var(--medium-bg)' }
+  return { label: 'Ổn định (<1%)', severity: 'low', color: 'var(--low)', bg: 'var(--low-bg)' }
+}
 
 const initialReports = [
   {
-    id: 'ABN-2409',
-    title: 'Sai lệch tồn kho khu vực miền Nam',
-    category: 'Kho vận',
-    severity: 'critical',
-    status: 'investigating',
-    site: 'Kho Sóng Thần',
-    assignee: 'Nguyễn Minh',
-    createdAt: '16/09/2026',
-    description: 'Số lượng thực tế thấp hơn dữ liệu hệ thống sau đợt kiểm kê cuối ngày. Cần đối soát lại hệ thống quét mã vạch và các phiếu xuất kho trong ca đêm.',
-    imageUrl: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
+    id: 'ANOM-2401',
+    date: '2026-09-18',
+    process: 'SMT',
+    productModel: 'MDL-PRO-X1',
+    machine: 'SMT-LINE-01',
+    quantity: 1200,
+    defectQuantity: 48,
+    defectRate: '4.00%',
+    responsiblePerson: 'Phan Đình Tuấn (Trưởng ca 1)',
+    assignee: 'Lê Hoàng (Kỹ sư QA)',
+    imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80',
     imagePath: '',
+    defectDescription: 'Chân hàn chip IC U12 bị dính thiếc ngắn mạch (Solder bridge), lệch vị trí đặt 0.2mm trên bo mạch chính.',
+    progressNote: 'Đã tạm dừng chuyền 15 phút để vệ sinh đầu hút mounter, căn chỉnh camera quang học và test lại mẻ 50 pcs đạt chuẩn.',
+    creator: 'Nguyễn Minh (QC Leader)',
+    status: 'investigating',
+    severity: 'high',
+    createdAt: '18/09/2026',
   },
   {
-    id: 'ABN-2408',
-    title: 'Truy cập bất thường ngoài giờ làm việc',
-    category: 'Bảo mật',
-    severity: 'high',
-    status: 'open',
-    site: 'Văn phòng Hà Nội',
-    assignee: 'Lê Hoàng',
-    createdAt: '16/09/2026',
-    description: 'Phát hiện đăng nhập từ dải IP chưa xác thực vào lúc 02:14 sáng với quyền hạn chỉnh sửa cấu hình hệ thống máy chủ.',
-    imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=800&q=80',
-    imagePath: '',
-  },
-  {
-    id: 'ABN-2407',
-    title: 'Nhiệt độ dây chuyền sản xuất vượt ngưỡng',
-    category: 'Vận hành',
-    severity: 'high',
-    status: 'investigating',
-    site: 'Nhà máy Bắc Ninh',
-    assignee: 'Trần An',
-    createdAt: '15/09/2026',
-    description: 'Cảm biến IoT ghi nhận nhiệt độ lò sấy vượt 15% ngưỡng an toàn trong 8 phút liên tục, có nguy cơ ngắt tự động toàn tuyến.',
+    id: 'ANOM-2402',
+    date: '2026-09-18',
+    process: 'Đúc ép nhựa',
+    productModel: 'SAM-S24-FRAME',
+    machine: 'INJ-MOLD-04',
+    quantity: 2500,
+    defectQuantity: 12,
+    defectRate: '0.48%',
+    responsiblePerson: 'Vũ Văn Hùng (Quản lý Line)',
+    assignee: 'Trần An (Kỹ thuật Khuôn)',
     imageUrl: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
     imagePath: '',
-  },
-  {
-    id: 'ABN-2406',
-    title: 'Giao dịch hoàn tiền trùng lặp ví điện tử',
-    category: 'Tài chính',
-    severity: 'medium',
+    defectDescription: 'Bề mặt vỏ khung có vệt bọt khí li ti và đường hàn nhựa (weld line) rõ nét ở góc cạnh trên.',
+    progressNote: 'Tăng nhiệt độ lòng khuôn thêm 4°C và hiệu chỉnh áp lực nạp keo. Kiểm tra 100 sản phẩm tiếp theo không còn lỗi.',
+    creator: 'Lê Hoàng (QA)',
     status: 'resolved',
-    site: 'Hệ thống thanh toán',
-    assignee: 'Phạm Linh',
-    createdAt: '14/09/2026',
-    description: 'Một khách hàng nhận hai yêu cầu hoàn tiền cho cùng một đơn hàng do lỗi nghẽn webhook từ cổng thanh toán.',
-    imageUrl: '',
-    imagePath: '',
-  },
-  {
-    id: 'ABN-2405',
-    title: 'Thiếu chữ ký biên bản bàn giao ca trực',
-    category: 'Tuân thủ',
     severity: 'low',
-    status: 'closed',
-    site: 'Chi nhánh Đà Nẵng',
-    assignee: 'Đỗ Vân',
-    createdAt: '13/09/2026',
-    description: 'Biên bản bàn giao thiết bị phòng máy ca đêm chưa có xác nhận của trưởng nhóm kỹ thuật.',
-    imageUrl: '',
-    imagePath: '',
+    createdAt: '18/09/2026',
   },
   {
-    id: 'ABN-2404',
-    title: 'Độ trễ đồng bộ dữ liệu khách hàng CRM',
-    category: 'Hệ thống',
-    severity: 'medium',
-    status: 'open',
-    site: 'CRM trung tâm',
-    assignee: 'Nguyễn Minh',
-    createdAt: '12/09/2026',
-    description: 'Dữ liệu khách hàng mới đồng bộ chậm hơn cam kết SLA 30 phút do hàng đợi tin nhắn Kafka bị đầy bộ đệm.',
-    imageUrl: '',
+    id: 'ANOM-2403',
+    date: '2026-09-17',
+    process: 'Lắp ráp',
+    productModel: 'PCB-MAIN-V2',
+    machine: 'ASSY-CELL-02',
+    quantity: 850,
+    defectQuantity: 65,
+    defectRate: '7.65%',
+    responsiblePerson: 'Nguyễn Hải Đăng (Trưởng xưởng)',
+    assignee: 'Phạm Linh (Chuyên viên QC)',
+    imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
     imagePath: '',
-  },
-  {
-    id: 'ABN-2403',
-    title: 'Nghi ngờ sử dụng tài khoản chia sẻ nội bộ',
-    category: 'Bảo mật',
+    defectDescription: 'Lực siết ốc vít mặt đáy không đạt tiêu chuẩn 1.8 N.m dẫn đến lỏng khung gá và kẹt nút bấm bên hông.',
+    progressNote: 'Đã thay mới đầu tuốc-nơ-vít điện tự ngắt lực và tái đào tạo thao tác công nhân ca 2 trước giờ bàn giao ca.',
+    creator: 'Trần An (PE)',
+    status: 'investigating',
     severity: 'high',
-    status: 'resolved',
-    site: 'Văn phòng HCM',
-    assignee: 'Lê Hoàng',
-    createdAt: '11/09/2026',
-    description: 'Tài khoản quản lý kho được truy cập đồng thời từ hai địa chỉ MAC khác nhau tại hai tòa nhà.',
-    imageUrl: '',
-    imagePath: '',
+    createdAt: '17/09/2026',
   },
   {
-    id: 'ABN-2402',
-    title: 'Chênh lệch số liệu kiểm đếm kiện hàng',
-    category: 'Kho vận',
-    severity: 'low',
-    status: 'closed',
-    site: 'Kho Long Biên',
-    assignee: 'Trần An',
-    createdAt: '10/09/2026',
-    description: 'Số kiện thực tế trên biên bản giấy và hệ thống phần mềm lệch nhau một đơn vị, đã rà soát và bù chứng từ.',
+    id: 'ANOM-2404',
+    date: '2026-09-17',
+    process: 'Hàn bo mạch',
+    productModel: 'SMART-MTR-09',
+    machine: 'WELD-BOT-05',
+    quantity: 3200,
+    defectQuantity: 8,
+    defectRate: '0.25%',
+    responsiblePerson: 'Trần Văn Bảo (Tổ trưởng Hàn)',
+    assignee: 'Nguyễn Minh (Kỹ sư Quá trình)',
     imageUrl: '',
     imagePath: '',
+    defectDescription: 'Mối hàn robot xuất hiện bọt khí vi mô và thiếu ngấu nhẹ ở cực âm tụ điện nguồn C4.',
+    progressNote: 'Đã bổ sung dung môi trợ hàn (Flux) và làm sạch mũi hàn robot. Tỷ lệ lỗi giảm về ngưỡng kiểm soát an toàn.',
+    creator: 'Vũ Hải (Kỹ thuật viên)',
+    status: 'resolved',
+    severity: 'low',
+    createdAt: '17/09/2026',
+  },
+  {
+    id: 'ANOM-2405',
+    date: '2026-09-16',
+    process: 'Gia công CNC',
+    productModel: 'CAM-LENS-F4',
+    machine: 'CNC-MILL-03',
+    quantity: 1500,
+    defectQuantity: 115,
+    defectRate: '7.67%',
+    responsiblePerson: 'Hoàng Minh Tâm (Trưởng nhóm CNC)',
+    assignee: 'Đỗ Vân (Kỹ sư Cơ khí)',
+    imageUrl: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80',
+    imagePath: '',
+    defectDescription: 'Độ sâu rãnh ren vượt quá dung sai cho phép ±0.03mm do mòn dao phay carbide sau chu kỳ 1200 sản phẩm.',
+    progressNote: 'Đã tiến hành lập biên bản thu hồi cách ly lô 115 pcs lỗi, thay dao phay mới và cập nhật quy trình thay dao sớm ở mốc 1000 pcs.',
+    creator: 'Lê Hoàng (QA)',
+    status: 'open',
+    severity: 'critical',
+    createdAt: '16/09/2026',
+  },
+  {
+    id: 'ANOM-2406',
+    date: '2026-09-16',
+    process: 'Sơn bề mặt',
+    productModel: 'AUTO-ECU-200',
+    machine: 'PAINT-LINE-01',
+    quantity: 600,
+    defectQuantity: 3,
+    defectRate: '0.50%',
+    responsiblePerson: 'Đỗ Kim Oanh (Tổ trưởng Sơn)',
+    assignee: 'Vũ Hải (Kỹ thuật Sơn)',
+    imageUrl: '',
+    imagePath: '',
+    defectDescription: 'Bụi sơn bám bề mặt nắp che nhôm ở góc dưới mẻ sơn số 14.',
+    progressNote: 'Đã thay màng lọc phòng sơn tĩnh điện và vệ sinh sàn khử bụi ca sáng.',
+    creator: 'Đỗ Vân (QC)',
+    status: 'closed',
+    severity: 'low',
+    createdAt: '16/09/2026',
+  },
+  {
+    id: 'ANOM-2407',
+    date: '2026-09-15',
+    process: 'Kiểm tra FQC',
+    productModel: 'ROBOT-ARM-C1',
+    machine: 'FQC-STATION-01',
+    quantity: 2000,
+    defectQuantity: 30,
+    defectRate: '1.50%',
+    responsiblePerson: 'Bùi Thanh Tùng (Trưởng phòng QC)',
+    assignee: 'Phan Anh (Giám sát QC)',
+    imageUrl: '',
+    imagePath: '',
+    defectDescription: 'Kiểm tra chức năng giao tiếp CAN-Bus không phản hồi trên 30 thiết bị kiểm thử cuối chuyền.',
+    progressNote: 'Nguyên nhân do lỗi nạp firmware phiên bản v1.2.0 chưa hoàn tất verify checksum. Đã flash lại firmware v1.2.1.',
+    creator: 'Bùi Thanh Tùng (QC)',
+    status: 'resolved',
+    severity: 'medium',
+    createdAt: '15/09/2026',
+  },
+  {
+    id: 'ANOM-2408',
+    date: '2026-09-15',
+    process: 'Đóng gói',
+    productModel: 'BOX-POWER-500',
+    machine: 'PACK-LINE-03',
+    quantity: 4500,
+    defectQuantity: 9,
+    defectRate: '0.20%',
+    responsiblePerson: 'Lưu Gia Huy (Quản lý Đóng gói)',
+    assignee: 'Đinh Nam (Kỹ thuật viên QC)',
+    imageUrl: '',
+    imagePath: '',
+    defectDescription: 'Tem nhãn mã vạch QR in bị mờ nét, máy quét laser trượt nhận diện ở 9 hộp carton.',
+    progressNote: 'Đã thay ruy-băng mực in máy dán nhãn Zebra và vệ sinh đầu in nhiệt.',
+    creator: 'Lưu Gia Huy',
+    status: 'closed',
+    severity: 'low',
+    createdAt: '15/09/2026',
   },
 ]
 
@@ -134,19 +205,14 @@ function loadLocalReports() {
   if (data) {
     try {
       const parsed = JSON.parse(data)
-      const hasAnyImage = parsed.some((r) => r.imageUrl)
-      if (!hasAnyImage) {
-        parsed.forEach((r) => {
-          const match = initialReports.find((i) => i.id === r.id)
-          if (match && match.imageUrl) r.imageUrl = match.imageUrl
-        })
-        saveLocalReports(parsed)
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].productModel) {
+        return parsed
       }
-      return parsed
     } catch {
-      return initialReports
+      // Fallback
     }
   }
+  saveLocalReports(initialReports)
   return initialReports
 }
 
@@ -157,11 +223,11 @@ function saveLocalReports(data) {
 const reports = ref(loadLocalReports())
 const isFirestoreLoading = ref(false)
 
-// Khởi tạo Firestore listener nếu đã cấu hình Firebase
+// Khởi tạo Firestore realtime listener nếu cấu hình Firebase
 if (isFirebaseConfigured && db) {
   isFirestoreLoading.value = true
   try {
-    const q = query(collection(db, 'reports'), orderBy('createdAtTimestamp', 'desc'))
+    const q = query(collection(db, 'manufacturing_reports'), orderBy('createdAtTimestamp', 'desc'))
     onSnapshot(
       q,
       (snapshot) => {
@@ -171,7 +237,6 @@ if (isFirebaseConfigured && db) {
             ...docSnap.data(),
           }))
         } else {
-          // Nếu Firestore còn trống, tự động nạp dữ liệu mẫu ban đầu
           seedInitialFirestoreData()
         }
         isFirestoreLoading.value = false
@@ -194,7 +259,7 @@ async function seedInitialFirestoreData() {
   try {
     for (const item of initialReports) {
       const { id, ...rest } = item
-      await addDoc(collection(db, 'reports'), {
+      await addDoc(collection(db, 'manufacturing_reports'), {
         ...rest,
         code: id,
         createdAtTimestamp: serverTimestamp(),
@@ -213,8 +278,19 @@ const stats = computed(() => ({
   open: reports.value.filter((r) => r.status === 'open').length,
   investigating: reports.value.filter((r) => r.status === 'investigating').length,
   resolved: reports.value.filter((r) => ['resolved', 'closed'].includes(r.status)).length,
-  critical: reports.value.filter((r) => r.severity === 'critical').length,
+  critical: reports.value.filter((r) => r.severity === 'critical' || parseFloat(r.defectRate) >= 10).length,
 }))
+
+export const commonProcesses = [
+  'SMT',
+  'Đúc ép nhựa',
+  'Lắp ráp',
+  'Hàn bo mạch',
+  'Gia công CNC',
+  'Sơn bề mặt',
+  'Kiểm tra FQC',
+  'Đóng gói',
+]
 
 export function useReports() {
   const { user } = useAuth()
@@ -223,9 +299,10 @@ export function useReports() {
   const searchText = ref('')
   const statusFilter = ref('all')
   const severityFilter = ref('all')
-  const activeStat = ref('all') // 'all' | 'attention' | 'investigating' | 'resolved'
+  const processFilter = ref('all')
+  const activeStat = ref('all')
   const currentPage = ref(1)
-  const pageSize = 7
+  const pageSize = 8
 
   const isModalOpen = ref(false)
   const isEditing = ref(false)
@@ -235,34 +312,59 @@ export function useReports() {
   const isDetailOpen = ref(false)
   const selectedReport = ref(null)
 
-  // Quản lý file ảnh đính kèm
   const selectedImageFile = ref(null)
   const imagePreviewUrl = ref('')
 
-  const emptyForm = () => ({
-    title: '',
-    category: 'Vận hành',
-    severity: 'medium',
-    status: 'open',
-    site: '',
-    assignee: user.value ? user.value.displayName : 'Nguyễn Minh',
-    description: '',
-    imageUrl: '',
-    imagePath: '',
-  })
+  const emptyForm = () => {
+    const today = new Date().toISOString().split('T')[0]
+    return {
+      date: today,
+      process: 'Lắp ráp',
+      productModel: '',
+      machine: '',
+      quantity: 1000,
+      defectQuantity: 0,
+      defectRate: '0.00%',
+      responsiblePerson: 'Phan Đình Tuấn (Trưởng ca 1)',
+      assignee: user.value ? (user.value.displayName || user.value.email) : 'Lê Hoàng (Kỹ sư QA)',
+      defectDescription: '',
+      progressNote: '',
+      creator: user.value ? (user.value.displayName || user.value.email) : 'Admin',
+      status: 'open',
+      severity: 'low',
+      imageUrl: '',
+      imagePath: '',
+    }
+  }
 
   const form = reactive(emptyForm())
+
+  function onQuantityOrDefectChange() {
+    form.defectRate = calculateDefectRate(form.defectQuantity, form.quantity)
+    const rateVal = parseFloat(form.defectRate) || 0
+    if (rateVal >= 10) form.severity = 'critical'
+    else if (rateVal >= 5) form.severity = 'high'
+    else if (rateVal >= 1) form.severity = 'medium'
+    else form.severity = 'low'
+  }
 
   const filteredReports = computed(() =>
     reports.value.filter((report) => {
       const keyword = searchText.value.toLowerCase().trim()
       const matchesSearch =
         !keyword ||
-        [report.id, report.title, report.site, report.assignee, report.category].some((v) =>
-          v ? v.toLowerCase().includes(keyword) : false
-        )
+        [
+          report.id,
+          report.productModel,
+          report.process,
+          report.machine,
+          report.defectDescription,
+          report.responsiblePerson,
+          report.assignee,
+          report.creator,
+          report.progressNote,
+        ].some((v) => (v ? String(v).toLowerCase().includes(keyword) : false))
 
-      // Stat filter
       let matchesStat = true
       if (activeStat.value === 'attention') {
         matchesStat = report.status === 'open' || report.status === 'investigating'
@@ -272,19 +374,22 @@ export function useReports() {
         matchesStat = report.status === 'resolved' || report.status === 'closed'
       }
 
-      // Dropdown status filter
       let matchesStatus = true
       if (statusFilter.value !== 'all') {
         matchesStatus = report.status === statusFilter.value
       }
 
-      // Dropdown severity filter
       let matchesSeverity = true
       if (severityFilter.value !== 'all') {
         matchesSeverity = report.severity === severityFilter.value
       }
 
-      return matchesSearch && matchesStat && matchesStatus && matchesSeverity
+      let matchesProcess = true
+      if (processFilter.value !== 'all') {
+        matchesProcess = report.process === processFilter.value
+      }
+
+      return matchesSearch && matchesStat && matchesStatus && matchesSeverity && matchesProcess
     })
   )
 
@@ -305,6 +410,7 @@ export function useReports() {
     searchText.value = ''
     statusFilter.value = 'all'
     severityFilter.value = 'all'
+    processFilter.value = 'all'
     activeStat.value = 'all'
     currentPage.value = 1
   }
@@ -332,7 +438,10 @@ export function useReports() {
   }
 
   function openEdit(report) {
-    Object.assign(form, report)
+    Object.assign(form, {
+      ...emptyForm(),
+      ...report,
+    })
     selectedImageFile.value = null
     imagePreviewUrl.value = report.imageUrl || ''
     editingId.value = report.id
@@ -353,7 +462,6 @@ export function useReports() {
     selectedReport.value = null
   }
 
-  // Chuyển File sang Base64 cho trường hợp fallback nếu Firebase Storage chưa mở quyền
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -366,7 +474,6 @@ export function useReports() {
   async function uploadImageFile(file) {
     if (!file) return { url: '', path: '' }
 
-    // Nếu có Firebase Storage
     if (isFirebaseConfigured && storage) {
       try {
         const filePath = `reports/${Date.now()}_${file.name.replace(/\s+/g, '_')}`
@@ -375,16 +482,15 @@ export function useReports() {
         const downloadUrl = await getDownloadURL(snapshot.ref)
         return { url: downloadUrl, path: filePath }
       } catch (err) {
-        console.warn('Upload Firebase Storage thất bại, chuyển sang Base64 fallback:', err)
+        console.warn('Upload Firebase Storage thất bại, fallback Base64:', err)
       }
     }
 
-    // Fallback: chuyển thành Base64 Data URL
     try {
       const base64 = await fileToBase64(file)
       return { url: base64, path: '' }
     } catch (e) {
-      console.error('Lỗi chuyển đổi ảnh:', e)
+      console.error('Lỗi chuyển ảnh:', e)
       return { url: '', path: '' }
     }
   }
@@ -392,14 +498,13 @@ export function useReports() {
   async function updateStatus(reportId, newStatus) {
     if (isFirebaseConfigured && db) {
       try {
-        const docRef = doc(db, 'reports', reportId)
+        const docRef = doc(db, 'manufacturing_reports', reportId)
         await updateDoc(docRef, { status: newStatus })
       } catch (err) {
-        console.error('Lỗi cập nhật trạng thái trên Firestore:', err)
+        console.error('Lỗi cập nhật trạng thái Firestore:', err)
       }
     }
 
-    // Cập nhật local
     const r = reports.value.find((item) => item.id === reportId)
     if (r) {
       r.status = newStatus
@@ -411,11 +516,13 @@ export function useReports() {
   }
 
   async function saveReport() {
-    if (!form.title || !form.site || !form.description) return
+    if (!form.productModel || !form.machine || !form.defectDescription) {
+      alert('Vui lòng nhập Product model, Machine và Defect description!')
+      return
+    }
     isSaving.value = true
 
     try {
-      // Xử lý upload ảnh nếu có file mới được chọn
       let finalImageUrl = form.imageUrl
       let finalImagePath = form.imagePath
 
@@ -425,30 +532,37 @@ export function useReports() {
         finalImagePath = uploadRes.path
       }
 
+      const calculatedRate = calculateDefectRate(form.defectQuantity, form.quantity)
+
       const reportPayload = {
-        title: form.title,
-        category: form.category,
-        severity: form.severity,
-        status: form.status,
-        site: form.site,
-        assignee: form.assignee || (user.value ? user.value.displayName : 'Nguyễn Minh'),
-        description: form.description,
-        imageUrl: finalImageUrl,
-        imagePath: finalImagePath,
+        date: form.date || new Date().toISOString().split('T')[0],
+        process: form.process || 'Lắp ráp',
+        productModel: form.productModel.trim(),
+        machine: form.machine.trim(),
+        quantity: Number(form.quantity) || 0,
+        defectQuantity: Number(form.defectQuantity) || 0,
+        defectRate: calculatedRate,
+        responsiblePerson: form.responsiblePerson || 'Quản lý chuyền',
+        assignee: form.assignee || (user.value ? user.value.displayName : 'QA Engineer'),
+        defectDescription: form.defectDescription.trim(),
+        progressNote: form.progressNote ? form.progressNote.trim() : '',
+        creator: form.creator || (user.value ? (user.value.displayName || user.value.email) : 'Admin'),
+        status: form.status || 'open',
+        severity: form.severity || 'low',
+        imageUrl: finalImageUrl || '',
+        imagePath: finalImagePath || '',
         createdAt: form.createdAt || new Date().toLocaleDateString('vi-VN'),
       }
 
       if (isEditing.value && editingId.value) {
-        // UPDATE
         if (isFirebaseConfigured && db) {
-          const docRef = doc(db, 'reports', editingId.value)
+          const docRef = doc(db, 'manufacturing_reports', editingId.value)
           await updateDoc(docRef, {
             ...reportPayload,
             updatedAt: serverTimestamp(),
           })
         }
 
-        // Cập nhật local
         const index = reports.value.findIndex((r) => r.id === editingId.value)
         if (index !== -1) {
           reports.value[index] = { ...reports.value[index], ...reportPayload }
@@ -458,11 +572,10 @@ export function useReports() {
           saveLocalReports(reports.value)
         }
       } else {
-        // CREATE
-        let newDocId = `ABN-${Date.now().toString().slice(-4)}`
+        let newDocId = `ANOM-${Date.now().toString().slice(-4)}`
 
         if (isFirebaseConfigured && db) {
-          const docRef = await addDoc(collection(db, 'reports'), {
+          const docRef = await addDoc(collection(db, 'manufacturing_reports'), {
             ...reportPayload,
             createdAtTimestamp: serverTimestamp(),
           })
@@ -488,15 +601,14 @@ export function useReports() {
   }
 
   async function removeReport(report) {
-    if (!window.confirm(`${t('confirmDelete')} [${report.id}] "${report.title}"?`)) {
+    if (!window.confirm(`${t('confirmDelete')} [${report.id}] "${report.productModel} - ${report.process}"?`)) {
       return
     }
 
     try {
       if (isFirebaseConfigured && db) {
-        await deleteDoc(doc(db, 'reports', report.id))
+        await deleteDoc(doc(db, 'manufacturing_reports', report.id))
 
-        // Xoá ảnh trên storage nếu có
         if (report.imagePath && storage) {
           try {
             await deleteObject(storageRef(storage, report.imagePath))
@@ -506,7 +618,6 @@ export function useReports() {
         }
       }
 
-      // Xoá local
       reports.value = reports.value.filter((item) => item.id !== report.id)
       saveLocalReports(reports.value)
 
@@ -529,6 +640,7 @@ export function useReports() {
     searchText,
     statusFilter,
     severityFilter,
+    processFilter,
     activeStat,
     currentPage,
     pageSize,
@@ -543,6 +655,7 @@ export function useReports() {
     imagePreviewUrl,
     handleImageSelected,
     removeAttachedImage,
+    onQuantityOrDefectChange,
     filteredReports,
     pagedReports,
     stats,
@@ -550,6 +663,7 @@ export function useReports() {
     severityLabels,
     statusLabels,
     categoryOptions,
+    commonProcesses,
     severityClass,
     statusClass,
     filterByStat,

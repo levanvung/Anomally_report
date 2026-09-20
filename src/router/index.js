@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
+import { getCurrentUser } from '../composables/useAuth'
 
 const routes = [
   {
@@ -47,15 +47,15 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   document.title = `Sentinel · ${to.meta.title || 'Báo cáo bất thường'}`
 
-  const { isAuthenticated, isLoading } = useAuth()
+  const currentUser = await getCurrentUser()
+  const isAuthenticated = Boolean(currentUser)
 
-  // Chờ khởi tạo auth nếu đang tải (đặc biệt khi reload trang)
-  if (to.meta.requiresAuth && !isAuthenticated.value) {
+  if (to.meta.requiresAuth && !isAuthenticated) {
     next({ name: 'login', query: { redirect: to.fullPath } })
-  } else if (to.meta.guestOnly && isAuthenticated.value) {
+  } else if (to.meta.guestOnly && isAuthenticated) {
     next({ name: 'reports' })
   } else {
     next()

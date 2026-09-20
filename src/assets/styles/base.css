@@ -12,15 +12,28 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   font-family: var(--font-body);
   color: var(--text-primary);
   background: var(--bg-deepest);
+  width: 100%;
+  max-width: 100%;
   min-width: 320px;
   line-height: 1.5;
   overflow-x: hidden;
+  position: relative;
+}
+
+#app {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  min-height: 100vh;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -67,7 +80,7 @@ a:hover {
 }
 
 .ant-table-thead > tr > th {
-  padding: 14px 20px !important;
+  padding: 12px 14px !important;
   color: var(--text-tertiary) !important;
   background: var(--bg-glass) !important;
   font-size: 11px;
@@ -77,8 +90,20 @@ a:hover {
   border-bottom: 1px solid var(--border-subtle) !important;
 }
 
-.ant-table-tbody > tr > td {
-  padding: 16px 20px !important;
+/* ─── Hide and collapse Ant Design measure row completely ─── */
+.ant-table-tbody > tr.ant-table-measure-row,
+.ant-table-tbody > tr.ant-table-measure-row > td {
+  padding: 0 !important;
+  height: 0 !important;
+  border: 0 !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  background: transparent !important;
+  visibility: collapse !important;
+}
+
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td {
+  padding: 12px 14px !important;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle) !important;
   background: transparent;
@@ -86,7 +111,7 @@ a:hover {
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.ant-table-tbody > tr:hover > td {
+.ant-table-tbody > tr:not(.ant-table-measure-row):hover > td {
   background: var(--accent-bg) !important;
 }
 
@@ -94,11 +119,39 @@ a:hover {
   background: transparent !important;
 }
 
+/* ─── Ant Design Table Bordered Mode (Kẻ viền bảng) ─── */
+.ant-table.ant-table-bordered > .ant-table-container,
+.ant-table-wrapper.ant-table-bordered .ant-table-container {
+  border-left: 1px solid var(--border-subtle) !important;
+  border-top: 1px solid var(--border-subtle) !important;
+}
+
+.ant-table.ant-table-bordered .ant-table-thead > tr > th,
+.ant-table-bordered .ant-table-thead > tr > th {
+  border-right: 1px solid var(--border-subtle) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.ant-table.ant-table-bordered .ant-table-tbody > tr:not(.ant-table-measure-row) > td,
+.ant-table-bordered .ant-table-tbody > tr:not(.ant-table-measure-row) > td {
+  border-right: 1px solid var(--border-subtle) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+[data-theme="light"] .ant-table.ant-table-bordered > .ant-table-container,
+[data-theme="light"] .ant-table-bordered .ant-table-thead > tr > th,
+[data-theme="light"] .ant-table-bordered .ant-table-tbody > tr:not(.ant-table-measure-row) > td {
+  border-right-color: rgba(0, 0, 0, 0.08) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+  border-left-color: rgba(0, 0, 0, 0.08) !important;
+  border-top-color: rgba(0, 0, 0, 0.08) !important;
+}
+
 /* ─── Fixed Columns (Cột Thao tác nổi lên trên khi scroll ngang) ─── */
 .ant-table-wrapper .ant-table-cell-fix-right,
 .ant-table-wrapper .ant-table-cell-fix-left,
-.ant-table-tbody > tr > td.ant-table-cell-fix-right,
-.ant-table-tbody > tr > td.ant-table-cell-fix-left {
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td.ant-table-cell-fix-right,
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td.ant-table-cell-fix-left {
   position: sticky !important;
   background-color: var(--table-fixed-bg, #152035) !important;
   opacity: 1 !important;
@@ -112,19 +165,19 @@ a:hover {
   padding: 14px 10px !important;
 }
 
-.ant-table-tbody > tr > td.ant-table-cell-fix-right,
-.ant-table-tbody > tr > td.ant-table-cell-fix-left {
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td.ant-table-cell-fix-right,
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td.ant-table-cell-fix-left {
   padding: 14px 10px !important;
 }
 
-.ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
-.ant-table-tbody > tr:hover > td.ant-table-cell-fix-left {
+.ant-table-tbody > tr:not(.ant-table-measure-row):hover > td.ant-table-cell-fix-right,
+.ant-table-tbody > tr:not(.ant-table-measure-row):hover > td.ant-table-cell-fix-left {
   background: linear-gradient(var(--accent-bg), var(--accent-bg)), var(--table-fixed-bg, #152035) !important;
   z-index: 10 !important;
 }
 
 .ant-table-cell-fix-right-first,
-.ant-table-tbody > tr > td.ant-table-cell-fix-right-first,
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td.ant-table-cell-fix-right-first,
 .ant-table-thead > tr > th.ant-table-cell-fix-right-first {
   border-left: 1px solid var(--border-subtle) !important;
   box-shadow: -8px 0 20px rgba(0, 0, 0, 0.28) !important;

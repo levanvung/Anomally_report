@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { useReports } from '../composables/useReports'
+import { useReports, getDefectRateLevel, commonProcesses } from '../composables/useReports'
 import {
   CheckCircleFilled,
   DeleteOutlined,
@@ -12,16 +12,24 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
-  EnvironmentOutlined,
   PictureOutlined,
   UploadOutlined,
   CloseCircleOutlined,
+  CalendarOutlined,
+  ToolOutlined,
+  UserOutlined,
+  AppstoreOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons-vue'
+import { useAuth } from '../composables/useAuth'
+
+const { isAdmin, canCreate, canEdit, canDelete } = useAuth()
 
 const {
   searchText,
   statusFilter,
   severityFilter,
+  processFilter,
   activeStat,
   currentPage,
   pageSize,
@@ -36,13 +44,13 @@ const {
   imagePreviewUrl,
   handleImageSelected,
   removeAttachedImage,
+  onQuantityOrDefectChange,
   filteredReports,
   pagedReports,
   stats,
   t,
   severityLabels,
   statusLabels,
-  categoryOptions,
   severityClass,
   statusClass,
   filterByStat,
@@ -91,9 +99,6 @@ function onFileDrop(e) {
         <h1>{{ t('title') }} <span class="accent-star">✦</span></h1>
         <p>{{ t('subtitle') }}</p>
       </div>
-      <a-button type="primary" size="large" class="create-btn" @click="openCreate">
-        <PlusOutlined /> {{ t('createNew') }}
-      </a-button>
     </div>
 
     <!-- Stats Grid (Clickable to Filter) -->
@@ -163,7 +168,7 @@ function onFileDrop(e) {
       </div>
     </div>
 
-    <!-- Control Bar: Search, Dropdowns & Quick Chips -->
+    <!-- Control Bar: Search, Process, Dropdowns & Quick Chips -->
     <div class="control-bar animate-in stagger-5">
       <div class="control-top">
         <div class="search-box">
@@ -171,7 +176,7 @@ function onFileDrop(e) {
             v-model:value="searchText"
             allow-clear
             size="large"
-            :placeholder="t('searchPlaceholder')"
+            placeholder="Tìm theo Model, Công đoạn, Máy, Lỗi, Nhân sự..."
             @change="currentPage = 1"
           >
             <template #prefix><SearchOutlined /></template>
@@ -179,6 +184,21 @@ function onFileDrop(e) {
         </div>
 
         <div class="filter-group">
+          <!-- Process Filter -->
+          <a-select
+            v-model:value="processFilter"
+            class="filter-select"
+            size="large"
+            @change="currentPage = 1"
+          >
+            <template #suffixIcon><AppstoreOutlined /></template>
+            <a-select-option value="all">Tất cả công đoạn</a-select-option>
+            <a-select-option v-for="proc in commonProcesses" :key="proc" :value="proc">
+              {{ proc }}
+            </a-select-option>
+          </a-select>
+
+          <!-- Status Filter -->
           <a-select
             v-model:value="statusFilter"
             class="filter-select"
@@ -193,19 +213,6 @@ function onFileDrop(e) {
             <a-select-option value="closed">{{ t('statusClosed') }}</a-select-option>
           </a-select>
 
-          <a-select
-            v-model:value="severityFilter"
-            class="filter-select"
-            size="large"
-            @change="currentPage = 1"
-          >
-            <a-select-option value="all">{{ t('allSeverities') }}</a-select-option>
-            <a-select-option value="critical">🔴 {{ t('severityCritical') }}</a-select-option>
-            <a-select-option value="high">🟠 {{ t('severityHigh') }}</a-select-option>
-            <a-select-option value="medium">🟡 {{ t('severityMedium') }}</a-select-option>
-            <a-select-option value="low">🟢 {{ t('severityLow') }}</a-select-option>
-          </a-select>
-
           <a-button class="filter-reset-btn" @click="resetFilters">
             <ReloadOutlined /> {{ t('resetFilter') }}
           </a-button>
@@ -217,7 +224,7 @@ function onFileDrop(e) {
         <span class="chip-label">{{ t('quickFilterLabel') }}</span>
         <button
           class="chip-btn"
-          :class="{ active: activeStat === 'all' && statusFilter === 'all' && severityFilter === 'all' }"
+          :class="{ active: activeStat === 'all' && statusFilter === 'all' && severityFilter === 'all' && processFilter === 'all' }"
           @click="resetFilters"
         >
           {{ t('filterAll') }} ({{ stats.total }})
@@ -253,43 +260,125 @@ function onFileDrop(e) {
       </div>
     </div>
 
-    <!-- Data Table (Hiển thị trên Desktop / Tablet >= 768px) -->
+    <!-- Data Table (15 Cột Chuẩn Hoá - Hiển thị trên Desktop / Tablet >= 768px) -->
     <div class="table-wrap desktop-only animate-in stagger-6">
+      <!-- Table Header Bar với nút tạo báo cáo bên phải -->
+      <div class="table-header-bar">
+        <div class="table-header-left">
+          <h3 class="table-header-title">
+            <FileTextOutlined style="margin-right: 6px; color: var(--accent);" />{{ t('title') }}
+          </h3>
+          <span class="table-header-badge">{{ filteredReports.length }} {{ t('records') || 'báo cáo' }}</span>
+        </div>
+        <div v-if="canCreate" class="table-header-right">
+          <a-button type="primary" class="table-create-btn" @click="openCreate">
+            <PlusOutlined /> {{ t('createNew') }}
+          </a-button>
+        </div>
+      </div>
+
       <a-table
         :data-source="pagedReports"
         :pagination="false"
         row-key="id"
-        :scroll="{ x: 1100 }"
+        bordered
+        :scroll="{ x: 2090 }"
       >
-        <!-- Report Column -->
-        <a-table-column :title="t('colReport')" key="report" :width="320">
+        <!-- 1. STT Column -->
+        <a-table-column :title="t('colNo')" key="stt" :width="65" align="center" fixed="left">
+          <template #default="{ index }">
+            <span class="stt-badge">{{ (currentPage - 1) * pageSize + index + 1 }}</span>
+          </template>
+        </a-table-column>
+
+        <!-- 2. Date Column -->
+        <a-table-column :title="t('colDate')" key="date" :width="120" fixed="left">
           <template #default="{ record }">
-            <div class="report-cell" @click="openDetail(record)">
-              <div class="report-title-row">
-                <strong>{{ record.title }}</strong>
-                <span v-if="record.imageUrl" class="report-img-indicator" :title="t('hasImage')">
-                  <PictureOutlined />
-                </span>
-              </div>
-              <div class="report-cell-meta">
-                <span class="report-cell-id">{{ record.code || record.id }}</span>
-                <span>•</span>
-                <span class="report-category">{{ record.category }}</span>
-                <span>•</span>
-                <span>{{ record.createdAt }}</span>
-              </div>
+            <span class="date-tag">
+              <CalendarOutlined style="margin-right: 4px;" />{{ record.date || record.createdAt }}
+            </span>
+          </template>
+        </a-table-column>
+
+        <!-- 3. Process Column -->
+        <a-table-column :title="t('colProcess')" key="process" :width="140">
+          <template #default="{ record }">
+            <span class="process-tag">{{ record.process }}</span>
+          </template>
+        </a-table-column>
+
+        <!-- 4. Product model Column -->
+        <a-table-column :title="t('colProductModel')" key="productModel" :width="160">
+          <template #default="{ record }">
+            <strong class="model-code" @click="openDetail(record)" :title="record.productModel">
+              {{ record.productModel }}
+            </strong>
+          </template>
+        </a-table-column>
+
+        <!-- 5. Machine Column -->
+        <a-table-column :title="t('colMachine')" key="machine" :width="150">
+          <template #default="{ record }">
+            <span class="machine-text" :title="record.machine">
+              <ToolOutlined />{{ record.machine }}
+            </span>
+          </template>
+        </a-table-column>
+
+        <!-- 6. Quantity Column -->
+        <a-table-column :title="t('colQuantity')" key="quantity" :width="110" align="right">
+          <template #default="{ record }">
+            <span class="num-text font-bold">{{ Number(record.quantity).toLocaleString() }}</span>
+          </template>
+        </a-table-column>
+
+        <!-- 7. Defect quantity Column -->
+        <a-table-column :title="t('colDefectQuantity')" key="defectQuantity" :width="130" align="right">
+          <template #default="{ record }">
+            <span class="defect-qty-badge">{{ Number(record.defectQuantity).toLocaleString() }}</span>
+          </template>
+        </a-table-column>
+
+        <!-- 8. Defect rate Column (Tự động tính) -->
+        <a-table-column :title="t('colDefectRate')" key="defectRate" :width="125" align="center">
+          <template #default="{ record }">
+            <span
+              class="defect-rate-pill"
+              :class="getDefectRateLevel(record.defectRate).severity"
+            >
+              {{ record.defectRate }}
+            </span>
+          </template>
+        </a-table-column>
+
+        <!-- 9. Người chịu trách nhiệm Column -->
+        <a-table-column :title="t('colResponsiblePerson')" key="responsiblePerson" :width="180">
+          <template #default="{ record }">
+            <div class="person-cell" :title="record.responsiblePerson">
+              <UserOutlined class="person-icon responsible" />
+              <span class="person-name">{{ record.responsiblePerson }}</span>
             </div>
           </template>
         </a-table-column>
 
-        <!-- Image Column (Ảnh hiện trường) -->
-        <a-table-column :title="t('colImage')" key="image" :width="110" align="center">
+        <!-- 10. Người phụ trách Column -->
+        <a-table-column :title="t('colAssignee')" key="assignee" :width="180">
+          <template #default="{ record }">
+            <div class="person-cell" :title="record.assignee">
+              <ToolOutlined class="person-icon assignee" />
+              <span class="person-name">{{ record.assignee }}</span>
+            </div>
+          </template>
+        </a-table-column>
+
+        <!-- 11. Defect image Column -->
+        <a-table-column :title="t('colDefectImage')" key="defectImage" :width="105" align="center">
           <template #default="{ record }">
             <div class="table-img-cell">
               <div v-if="record.imageUrl" class="table-image-thumb-box" :title="t('viewFullImage')">
                 <a-image
                   :src="record.imageUrl"
-                  :alt="record.title"
+                  :alt="record.productModel"
                   class="table-image-thumb"
                 />
               </div>
@@ -300,45 +389,35 @@ function onFileDrop(e) {
           </template>
         </a-table-column>
 
-        <!-- Severity Column -->
-        <a-table-column :title="t('colSeverity')" key="severity" :width="160">
+        <!-- 12. Defect description Column -->
+        <a-table-column :title="t('colDefectDescription')" key="defectDescription" :width="230">
           <template #default="{ record }">
-            <span class="severity-pill" :class="severityClass(record.severity)">
-              <i></i>{{ severityLabels[record.severity] }}
-            </span>
-          </template>
-        </a-table-column>
-
-        <!-- Status Column -->
-        <a-table-column :title="t('colStatus')" key="status" :width="170">
-          <template #default="{ record }">
-            <span class="status-pill" :class="statusClass(record.status)">
-              {{ statusLabels[record.status] }}
-            </span>
-          </template>
-        </a-table-column>
-
-        <!-- Site Column -->
-        <a-table-column :title="t('colSite')" data-index="site" key="site" :width="190">
-          <template #default="{ record }">
-            <div class="site-cell">
-              <EnvironmentOutlined style="color: var(--accent);" />
-              {{ record.site }}
+            <div class="text-truncate-cell" :title="record.defectDescription" @click="openDetail(record)">
+              {{ record.defectDescription }}
             </div>
           </template>
         </a-table-column>
 
-        <!-- Assignee Column -->
-        <a-table-column :title="t('colAssignee')" key="assignee" :width="180">
+        <!-- 13. Progress Note Column -->
+        <a-table-column :title="t('colProgressNote')" key="progressNote" :width="210">
           <template #default="{ record }">
-            <div class="assignee">
-              <span class="mini-avatar">{{ record.assignee.split(' ').map((part) => part[0]).slice(-2).join('') }}</span>
-              {{ record.assignee }}
+            <div class="text-truncate-cell note-text" :title="record.progressNote" @click="openDetail(record)">
+              {{ record.progressNote || '—' }}
             </div>
           </template>
         </a-table-column>
 
-        <!-- Action Column -->
+        <!-- 14. Người tạo Column -->
+        <a-table-column :title="t('colCreator')" key="creator" :width="180">
+          <template #default="{ record }">
+            <span class="creator-tag" :title="record.creator || 'Admin'">
+              <UserOutlined style="margin-right: 5px; flex-shrink: 0;" />
+              <span class="creator-name">{{ record.creator || 'Admin' }}</span>
+            </span>
+          </template>
+        </a-table-column>
+
+        <!-- 15. Action Column -->
         <a-table-column :title="t('colActions')" key="actions" :width="130" align="center" fixed="right">
           <template #default="{ record }">
             <div class="row-actions">
@@ -350,22 +429,24 @@ function onFileDrop(e) {
               >
                 <EyeOutlined />
               </button>
-              <button
-                type="button"
-                class="action-btn"
-                :title="t('actionEdit')"
-                @click="openEdit(record)"
-              >
-                <EditOutlined />
-              </button>
-              <button
-                type="button"
-                class="action-btn delete-btn"
-                :title="t('actionDelete')"
-                @click="removeReport(record)"
-              >
-                <DeleteOutlined />
-              </button>
+              <template v-if="canEdit || canDelete">
+                <button
+                  type="button"
+                  class="action-btn"
+                  :title="t('actionEdit')"
+                  @click="openEdit(record)"
+                >
+                  <EditOutlined />
+                </button>
+                <button
+                  type="button"
+                  class="action-btn delete-btn"
+                  :title="t('actionDelete')"
+                  @click="removeReport(record)"
+                >
+                  <DeleteOutlined />
+                </button>
+              </template>
             </div>
           </template>
         </a-table-column>
@@ -395,8 +476,17 @@ function onFileDrop(e) {
       </div>
     </div>
 
-    <!-- Mobile Card View (Hiển thị mượt mà trên Mobile < 768px) -->
+    <!-- Mobile Card View (Tối ưu 15 trường cho Mobile < 768px) -->
     <div class="mobile-cards-wrap mobile-only animate-in stagger-6">
+      <div class="mobile-header-bar">
+        <div class="mobile-header-left">
+          <span class="mobile-header-title">{{ t('title') }}</span>
+          <span class="table-header-badge">{{ filteredReports.length }}</span>
+        </div>
+        <a-button v-if="canCreate" type="primary" size="small" class="table-create-btn" @click="openCreate">
+          <PlusOutlined /> {{ t('createNew') }}
+        </a-button>
+      </div>
       <!-- Empty State -->
       <div v-if="filteredReports.length === 0" class="empty-box">
         <div class="empty-box-icon"><FileSearchOutlined /></div>
@@ -408,16 +498,22 @@ function onFileDrop(e) {
       <!-- Card List -->
       <div v-else class="mobile-card-list">
         <div
-          v-for="record in pagedReports"
+          v-for="(record, idx) in pagedReports"
           :key="record.id"
           class="report-mobile-card"
         >
-          <!-- Card Header: Code ID + Severity + Status -->
+          <!-- Card Header: STT + Model + Defect Rate Badge -->
           <div class="mobile-card-header">
-            <span class="report-cell-id">{{ record.code || record.id }}</span>
+            <div class="mobile-card-model-group">
+              <span class="stt-badge">#{{ (currentPage - 1) * pageSize + idx + 1 }}</span>
+              <strong class="mobile-card-model">{{ record.productModel }}</strong>
+            </div>
             <div class="mobile-card-pills">
-              <span class="severity-pill" :class="severityClass(record.severity)">
-                <i></i>{{ severityLabels[record.severity] }}
+              <span
+                class="defect-rate-pill"
+                :class="getDefectRateLevel(record.defectRate).severity"
+              >
+                {{ record.defectRate }}
               </span>
               <span class="status-pill" :class="statusClass(record.status)">
                 {{ statusLabels[record.status] }}
@@ -425,40 +521,69 @@ function onFileDrop(e) {
             </div>
           </div>
 
-          <!-- Card Body: Title + Category -->
-          <div class="mobile-card-body" @click="openDetail(record)">
-            <div class="mobile-card-content">
-              <h3 class="mobile-card-title">{{ record.title }}</h3>
-              <div class="mobile-card-cat-badge">
-                <span>{{ record.category }}</span>
-              </div>
+          <!-- Manufacturing Metrics 3-Box Bar -->
+          <div class="mobile-metrics-grid">
+            <div class="mobile-metric-item">
+              <span class="metric-label">{{ t('detailQuantity') }}</span>
+              <strong class="metric-val">{{ Number(record.quantity).toLocaleString() }}</strong>
+            </div>
+            <div class="mobile-metric-item danger">
+              <span class="metric-label">{{ t('detailDefectQty') }}</span>
+              <strong class="metric-val">{{ Number(record.defectQuantity).toLocaleString() }}</strong>
+            </div>
+            <div class="mobile-metric-item highlight">
+              <span class="metric-label">{{ t('detailDefectRate') }}</span>
+              <strong class="metric-val">{{ record.defectRate }}</strong>
             </div>
           </div>
 
-          <!-- Prominent Incident Photo Banner (Hiển thị to rõ trên Mobile khi có ảnh) -->
-          <div v-if="record.imageUrl" class="mobile-card-photo-banner" @click="openDetail(record)">
-            <img :src="record.imageUrl" :alt="record.title" class="mobile-card-banner-img" />
+          <!-- Card Process, Machine & Date -->
+          <div class="mobile-subinfo-row">
+            <span class="process-tag">{{ record.process }}</span>
+            <span class="machine-badge">⚙️ {{ record.machine }}</span>
+            <span class="date-tag">📅 {{ record.date || record.createdAt }}</span>
+          </div>
+
+          <!-- Defect Photo Banner (Hiển thị to rõ trên Mobile khi có ảnh) -->
+          <div v-if="record.imageUrl" class="mobile-card-photo-banner">
+            <a-image
+              :src="record.imageUrl"
+              :alt="record.productModel"
+              class="mobile-card-banner-img"
+            />
             <div class="mobile-photo-tag">
-              <PictureOutlined /> <span>Ảnh hiện trường sự cố</span>
+              <PictureOutlined /> <span>{{ t('colDefectImage') }}</span>
+            </div>
+            <div class="mobile-photo-zoom-badge">
+              <span>🔍 Phóng to & vuốt chọn vùng xem</span>
             </div>
           </div>
 
-          <!-- Card Meta: Site + Assignee + Created Date -->
+          <!-- Defect Description & Progress Note -->
+          <div class="mobile-card-desc-box" @click="openDetail(record)">
+            <div class="mobile-desc-title">{{ t('colDefectDescription') }}:</div>
+            <p class="mobile-desc-content">{{ record.defectDescription }}</p>
+            <div v-if="record.progressNote" class="mobile-note-box">
+              <span class="note-label">{{ t('colProgressNote') }}:</span> {{ record.progressNote }}
+            </div>
+          </div>
+
+          <!-- Personnel Meta Row -->
           <div class="mobile-card-meta">
             <div class="mobile-meta-item">
-              <EnvironmentOutlined style="color: var(--accent);" />
-              <span>{{ record.site }}</span>
+              <span class="meta-icon-tag">👤 {{ t('colResponsiblePerson') }}:</span>
+              <span>{{ record.responsiblePerson }}</span>
             </div>
             <div class="mobile-meta-item">
-              <span class="mini-avatar">{{ record.assignee.split(' ').map((part) => part[0]).slice(-2).join('') }}</span>
+              <span class="meta-icon-tag">🔧 {{ t('colAssignee') }}:</span>
               <span>{{ record.assignee }}</span>
             </div>
             <div class="mobile-meta-item date-item">
-              <span>📅 {{ record.createdAt }}</span>
+              <span>{{ t('colCreator') }}: {{ record.creator || 'Admin' }}</span>
             </div>
           </div>
 
-          <!-- Card Actions (Thumb-friendly touch targets) -->
+          <!-- Card Actions -->
           <div class="mobile-card-actions">
             <button
               type="button"
@@ -467,20 +592,22 @@ function onFileDrop(e) {
             >
               <EyeOutlined /> <span>{{ t('actionView') }}</span>
             </button>
-            <button
-              type="button"
-              class="mobile-action-btn edit"
-              @click="openEdit(record)"
-            >
-              <EditOutlined /> <span>{{ t('actionEdit') }}</span>
-            </button>
-            <button
-              type="button"
-              class="mobile-action-btn delete"
-              @click="removeReport(record)"
-            >
-              <DeleteOutlined /> <span>{{ t('actionDelete') }}</span>
-            </button>
+            <template v-if="canEdit || canDelete">
+              <button
+                type="button"
+                class="mobile-action-btn edit"
+                @click="openEdit(record)"
+              >
+                <EditOutlined /> <span>{{ t('actionEdit') }}</span>
+              </button>
+              <button
+                type="button"
+                class="mobile-action-btn delete"
+                @click="removeReport(record)"
+              >
+                <DeleteOutlined /> <span>{{ t('actionDelete') }}</span>
+              </button>
+            </template>
           </div>
         </div>
       </div>
@@ -499,10 +626,10 @@ function onFileDrop(e) {
       </div>
     </div>
 
-    <!-- Modal Xem Chi Tiết Báo Cáo & Cập Nhật Nhanh -->
+    <!-- Modal Xem Chi Tiết 15 Thông Tin Báo Cáo -->
     <a-modal
       v-model:open="isDetailOpen"
-      width="70%"
+      width="780px"
       class="detail-modal"
       :footer="null"
       @cancel="closeDetail"
@@ -511,48 +638,82 @@ function onFileDrop(e) {
         <div class="detail-header">
           <div class="detail-badge-row">
             <span class="report-cell-id">{{ selectedReport.id }}</span>
-            <span class="severity-pill" :class="severityClass(selectedReport.severity)">
-              <i></i>{{ severityLabels[selectedReport.severity] }}
+            <span class="process-tag">{{ selectedReport.process }}</span>
+            <span class="machine-badge">⚙️ {{ selectedReport.machine }}</span>
+            <span
+              class="defect-rate-pill"
+              :class="getDefectRateLevel(selectedReport.defectRate).severity"
+            >
+              {{ selectedReport.defectRate }}
             </span>
             <span class="status-pill" :class="statusClass(selectedReport.status)">
               {{ statusLabels[selectedReport.status] }}
             </span>
           </div>
-          <h2 class="detail-title">{{ selectedReport.title }}</h2>
+          <h2 class="detail-title">{{ selectedReport.productModel }} · {{ selectedReport.process }}</h2>
         </div>
 
-        <div class="detail-desc-box">
-          {{ selectedReport.description }}
+        <!-- 3 Metrics Big Box in Detail Modal -->
+        <div class="detail-metrics-banner">
+          <div class="detail-metric-card">
+            <span>{{ t('detailQuantity') }}</span>
+            <strong>{{ Number(selectedReport.quantity).toLocaleString() }}</strong>
+          </div>
+          <div class="detail-metric-card alert">
+            <span>{{ t('detailDefectQty') }}</span>
+            <strong>{{ Number(selectedReport.defectQuantity).toLocaleString() }}</strong>
+          </div>
+          <div class="detail-metric-card rate">
+            <span>{{ t('detailDefectRate') }}</span>
+            <strong>{{ selectedReport.defectRate }}</strong>
+          </div>
         </div>
 
-        <!-- Image display in detail modal if present -->
+        <!-- Defect Description -->
+        <div class="detail-section-block">
+          <div class="detail-section-title">📌 {{ t('detailDesc') }}</div>
+          <div class="detail-desc-box">
+            {{ selectedReport.defectDescription }}
+          </div>
+        </div>
+
+        <!-- Progress Note -->
+        <div v-if="selectedReport.progressNote" class="detail-section-block">
+          <div class="detail-section-title">📝 {{ t('detailProgress') }}</div>
+          <div class="detail-note-box">
+            {{ selectedReport.progressNote }}
+          </div>
+        </div>
+
+        <!-- Defect Image display -->
         <div v-if="selectedReport.imageUrl" class="detail-image-box">
-          <div class="detail-info-label">{{ t('labelImage') }}</div>
+          <div class="detail-section-title">📷 {{ t('labelDefectImage') }}</div>
           <div class="detail-image-preview">
             <a-image
               :src="selectedReport.imageUrl"
-              :alt="selectedReport.title"
+              :alt="selectedReport.productModel"
               class="detail-report-img"
             />
           </div>
         </div>
 
+        <!-- Personnel & Tracking Grid -->
         <div class="detail-info-grid">
           <div class="detail-info-item">
-            <div class="detail-info-label">{{ t('detailCategory') }}</div>
-            <div class="detail-info-value">{{ selectedReport.category }}</div>
+            <div class="detail-info-label">{{ t('detailDate') }}</div>
+            <div class="detail-info-value">📅 {{ selectedReport.date || selectedReport.createdAt }}</div>
           </div>
           <div class="detail-info-item">
-            <div class="detail-info-label">{{ t('detailSite') }}</div>
-            <div class="detail-info-value">{{ selectedReport.site }}</div>
+            <div class="detail-info-label">{{ t('detailResponsible') }}</div>
+            <div class="detail-info-value">👤 {{ selectedReport.responsiblePerson }}</div>
           </div>
           <div class="detail-info-item">
             <div class="detail-info-label">{{ t('detailAssignee') }}</div>
-            <div class="detail-info-value">{{ selectedReport.assignee }}</div>
+            <div class="detail-info-value">🔧 {{ selectedReport.assignee }}</div>
           </div>
           <div class="detail-info-item">
-            <div class="detail-info-label">{{ t('detailCreatedAt') }}</div>
-            <div class="detail-info-value">{{ selectedReport.createdAt }}</div>
+            <div class="detail-info-label">{{ t('detailCreator') }}</div>
+            <div class="detail-info-value">✍️ {{ selectedReport.creator || 'Admin' }}</div>
           </div>
         </div>
 
@@ -563,92 +724,159 @@ function onFileDrop(e) {
             <button
               class="status-btn"
               :class="{ 'active-status-btn': selectedReport.status === 'open' }"
-              @click="updateStatus(selectedReport.id, 'open')"
+              :disabled="!isAdmin"
+              :title="!isAdmin ? t('noPermissionEdit') : ''"
+              @click="isAdmin && updateStatus(selectedReport.id, 'open')"
             >
               {{ t('statusOpen') }}
             </button>
             <button
               class="status-btn"
               :class="{ 'active-status-btn': selectedReport.status === 'investigating' }"
-              @click="updateStatus(selectedReport.id, 'investigating')"
+              :disabled="!isAdmin"
+              :title="!isAdmin ? t('noPermissionEdit') : ''"
+              @click="isAdmin && updateStatus(selectedReport.id, 'investigating')"
             >
               {{ t('statusInvestigating') }}
             </button>
             <button
               class="status-btn"
               :class="{ 'active-status-btn': selectedReport.status === 'resolved' }"
-              @click="updateStatus(selectedReport.id, 'resolved')"
+              :disabled="!isAdmin"
+              :title="!isAdmin ? t('noPermissionEdit') : ''"
+              @click="isAdmin && updateStatus(selectedReport.id, 'resolved')"
             >
               {{ t('statusResolved') }}
             </button>
             <button
               class="status-btn"
               :class="{ 'active-status-btn': selectedReport.status === 'closed' }"
-              @click="updateStatus(selectedReport.id, 'closed')"
+              :disabled="!isAdmin"
+              :title="!isAdmin ? t('noPermissionEdit') : ''"
+              @click="isAdmin && updateStatus(selectedReport.id, 'closed')"
             >
               {{ t('statusClosed') }}
             </button>
           </div>
 
-          <a-button type="primary" style="margin-left: auto;" @click="openEdit(selectedReport)">
+          <a-button v-if="canEdit" type="primary" style="margin-left: auto;" @click="openEdit(selectedReport)">
             <EditOutlined /> {{ t('editInfo') }}
           </a-button>
         </div>
       </div>
     </a-modal>
 
-    <!-- Modal Tạo / Chỉnh sửa Báo Cáo -->
-    <a-modal
+    <!-- Drawer Tạo / Chỉnh sửa Báo Cáo 15 Cột -->
+    <a-drawer
       v-model:open="isModalOpen"
-      width="640px"
+      width="50%"
       :title="isEditing ? t('modalEditTitle') : t('modalCreateTitle')"
-      :ok-text="isSaving ? 'Đang lưu...' : t('btnSave')"
-      :cancel-text="t('btnCancel')"
-      :ok-button-props="{ loading: isSaving, disabled: !form.title || !form.site || !form.description }"
-      @ok="saveReport"
+      placement="right"
+      class="report-drawer"
     >
-      <a-form layout="vertical" class="report-form">
-        <a-form-item :label="t('labelTitle')" required>
-          <a-input
-            v-model:value="form.title"
-            size="large"
-            :placeholder="t('placeholderTitle')"
-          />
-        </a-form-item>
+      <template #extra>
+        <div class="drawer-header-actions">
+          <a-button @click="isModalOpen = false">
+            {{ t('btnCancel') }}
+          </a-button>
+          <a-button
+            type="primary"
+            style="color:white"
+            :loading="isSaving"
+            :disabled="!form.productModel || !form.machine || !form.defectDescription"
+            @click="saveReport"
+          >
+            {{ isSaving ? 'Đang lưu...' : t('btnSave') }}
+          </a-button>
+        </div>  
+      </template>
 
+      <a-form layout="vertical" class="report-form">
+        <!-- Nhóm 1: Ngày, Công đoạn, Model & Máy -->
         <div class="form-grid">
-          <a-form-item :label="t('labelCategory')">
-            <a-select v-model:value="form.category" size="large">
-              <a-select-option
-                v-for="cat in categoryOptions"
-                :key="cat.value"
-                :value="cat.value"
-              >
-                {{ cat.label }}
-              </a-select-option>
-            </a-select>
+          <a-form-item :label="t('labelDate')" required>
+            <a-input
+              v-model:value="form.date"
+              type="date"
+              size="large"
+            />
           </a-form-item>
 
-          <a-form-item :label="t('labelSeverity')">
-            <a-select v-model:value="form.severity" size="large">
-              <a-select-option value="critical">🔴 {{ t('severityCritical') }}</a-select-option>
-              <a-select-option value="high">🟠 {{ t('severityHigh') }}</a-select-option>
-              <a-select-option value="medium">🟡 {{ t('severityMedium') }}</a-select-option>
-              <a-select-option value="low">🟢 {{ t('severityLow') }}</a-select-option>
+          <a-form-item :label="t('labelProcess')" required>
+            <a-select v-model:value="form.process" size="large">
+              <a-select-option v-for="proc in commonProcesses" :key="proc" :value="proc">
+                {{ proc }}
+              </a-select-option>
             </a-select>
           </a-form-item>
         </div>
 
         <div class="form-grid">
-          <a-form-item :label="t('labelSite')" required>
+          <a-form-item :label="t('labelProductModel')" required>
             <a-input
-              v-model:value="form.site"
+              v-model:value="form.productModel"
               size="large"
-              :placeholder="t('placeholderSite')"
+              :placeholder="t('placeholderProductModel')"
             />
           </a-form-item>
 
-          <a-form-item :label="t('labelAssignee')">
+          <a-form-item :label="t('labelMachine')" required>
+            <a-input
+              v-model:value="form.machine"
+              size="large"
+              :placeholder="t('placeholderMachine')"
+            />
+          </a-form-item>
+        </div>
+
+        <!-- Nhóm 2: Số lượng, Số lượng lỗi & Tỷ lệ lỗi tự tính -->
+        <div class="form-grid-3">
+          <a-form-item :label="t('labelQuantity')" required>
+            <a-input-number
+              v-model:value="form.quantity"
+              :min="1"
+              size="large"
+              style="width: 100%;"
+              :placeholder="t('placeholderQuantity')"
+              @change="onQuantityOrDefectChange"
+            />
+          </a-form-item>
+
+          <a-form-item :label="t('labelDefectQuantity')" required>
+            <a-input-number
+              v-model:value="form.defectQuantity"
+              :min="0"
+              size="large"
+              style="width: 100%;"
+              :placeholder="t('placeholderDefectQuantity')"
+              @change="onQuantityOrDefectChange"
+            />
+          </a-form-item>
+
+          <a-form-item :label="t('labelDefectRate')">
+            <div class="rate-preview-box">
+              <span
+                class="defect-rate-pill preview"
+                :class="getDefectRateLevel(form.defectRate).severity"
+              >
+                {{ form.defectRate }}
+              </span>
+              <span class="rate-hint">{{ getDefectRateLevel(form.defectRate).label }}</span>
+            </div>
+          </a-form-item>
+        </div>
+
+        <!-- Nhóm 3: Nhân sự & Trạng thái -->
+        <div class="form-grid">
+          <a-form-item :label="t('labelResponsiblePerson')" required>
+            <a-input
+              v-model:value="form.responsiblePerson"
+              size="large"
+              :placeholder="t('placeholderResponsiblePerson')"
+            />
+          </a-form-item>
+
+          <a-form-item :label="t('labelAssignee')" required>
             <a-input
               v-model:value="form.assignee"
               size="large"
@@ -657,25 +885,44 @@ function onFileDrop(e) {
           </a-form-item>
         </div>
 
-        <a-form-item :label="t('labelStatus')" v-if="isEditing">
-          <a-select v-model:value="form.status" size="large">
-            <a-select-option value="open">{{ t('statusOpen') }}</a-select-option>
-            <a-select-option value="investigating">{{ t('statusInvestigating') }}</a-select-option>
-            <a-select-option value="resolved">{{ t('statusResolved') }}</a-select-option>
-            <a-select-option value="closed">{{ t('statusClosed') }}</a-select-option>
-          </a-select>
-        </a-form-item>
+        <div class="form-grid">
+          <a-form-item :label="t('labelCreator')">
+            <a-input
+              v-model:value="form.creator"
+              size="large"
+              :placeholder="t('placeholderCreator')"
+            />
+          </a-form-item>
 
-        <a-form-item :label="t('labelDescription')" required>
+          <a-form-item :label="t('labelStatus')">
+            <a-select v-model:value="form.status" size="large">
+              <a-select-option value="open">{{ t('statusOpen') }}</a-select-option>
+              <a-select-option value="investigating">{{ t('statusInvestigating') }}</a-select-option>
+              <a-select-option value="resolved">{{ t('statusResolved') }}</a-select-option>
+              <a-select-option value="closed">{{ t('statusClosed') }}</a-select-option>
+            </a-select>
+          </a-form-item>
+        </div>
+
+        <!-- Nhóm 4: Mô tả lỗi & Ghi chú tiến độ -->
+        <a-form-item :label="t('labelDefectDescription')" required>
           <a-textarea
-            v-model:value="form.description"
-            :rows="4"
-            :placeholder="t('placeholderDescription')"
+            v-model:value="form.defectDescription"
+            :rows="3"
+            :placeholder="t('placeholderDefectDescription')"
           />
         </a-form-item>
 
-        <!-- Image Upload Field -->
-        <a-form-item :label="t('labelImage')">
+        <a-form-item :label="t('labelProgressNote')">
+          <a-textarea
+            v-model:value="form.progressNote"
+            :rows="2"
+            :placeholder="t('placeholderProgressNote')"
+          />
+        </a-form-item>
+
+        <!-- Nhóm 5: Ảnh lỗi hiện trường -->
+        <a-form-item :label="t('labelDefectImage')">
           <div class="image-upload-wrapper">
             <input
               type="file"
@@ -689,7 +936,7 @@ function onFileDrop(e) {
             <div v-if="imagePreviewUrl || form.imageUrl" class="image-preview-card">
               <img :src="imagePreviewUrl || form.imageUrl" alt="Preview" class="upload-thumbnail" />
               <div class="image-preview-meta">
-                <span class="preview-filename">{{ selectedImageFile ? selectedImageFile.name : 'Ảnh hiện trường sự cố' }}</span>
+                <span class="preview-filename">{{ selectedImageFile ? selectedImageFile.name : (form.productModel ? `Ảnh lỗi ${form.productModel}` : 'Ảnh lỗi hiện trường') }}</span>
                 <span v-if="selectedImageFile" class="preview-filesize">{{ (selectedImageFile.size / 1024).toFixed(1) }} KB</span>
               </div>
               <button
@@ -717,6 +964,6 @@ function onFileDrop(e) {
           </div>
         </a-form-item>
       </a-form>
-    </a-modal>
+    </a-drawer>
   </div>
 </template>

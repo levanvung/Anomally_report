@@ -10,6 +10,7 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 }
 
 export const isFirebaseConfigured = Boolean(
@@ -31,6 +32,9 @@ if (isFirebaseConfigured) {
     db = getFirestore(app)
     storage = getStorage(app)
     googleProvider = new GoogleAuthProvider()
+    googleProvider.setCustomParameters({
+      prompt: 'select_account',
+    })
   } catch (error) {
     console.error('Lỗi khi khởi tạo Firebase:', error)
   }
