@@ -615,6 +615,42 @@ export function useReports() {
     }
   }
 
+  function updateAnnotatedImage(target, updatedData) {
+    if (!target || !updatedData) return
+
+    if (target.type === 'selected' && selectedFiles.value[target.index]) {
+      const item = selectedFiles.value[target.index]
+      if (item.previewUrl && item.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(item.previewUrl)
+      }
+      item.file = updatedData.file
+      item.originalFile = updatedData.file
+      item.previewUrl = updatedData.previewUrl
+      item.compressedBase64 = updatedData.base64
+      item.compressedSize = updatedData.compressedSize
+      item.originalSize = updatedData.originalSize
+      item.name = updatedData.name
+      item.savings = Math.max(0, Math.round((1 - updatedData.compressedSize / updatedData.originalSize) * 100))
+      item.isCompressing = false
+
+      if (target.index === 0) {
+        selectedImageFile.value = updatedData.file
+        imagePreviewUrl.value = updatedData.previewUrl
+      }
+    } else if (target.type === 'existing' && existingImages.value[target.index]) {
+      existingImages.value[target.index] = {
+        ...existingImages.value[target.index],
+        url: updatedData.base64 || updatedData.previewUrl,
+        path: '',
+        name: updatedData.name,
+      }
+      if (target.index === 0) {
+        form.imageUrl = updatedData.base64 || updatedData.previewUrl
+        imagePreviewUrl.value = updatedData.previewUrl || updatedData.base64
+      }
+    }
+  }
+
   function clearAllImages() {
     for (const item of selectedFiles.value) {
       if (item.previewUrl && item.previewUrl.startsWith('blob:')) {
@@ -909,8 +945,121 @@ export function useReports() {
     currentPage.value = page
   }
 
+  async function batchImportReports(importedList = [], duplicateMode = 'overwrite') {
+    if (!importedList || importedList.length === 0) return { count: 0, added: 0, updated: 0, skipped: 0 }
+
+    let addedCount = 0
+    let updatedCount = 0
+    let skippedCount = 0
+
+    const norm = (str) => (str || '').toString().trim().toLowerCase()
+
+    const findMatch = (newRep) => {
+      return reports.value.find((r) => {
+        const sameDate = norm(r.date) === norm(newRep.date)
+        const sameModel = norm(r.productModel) === norm(newRep.productModel)
+        const sameProcess = norm(r.process) === norm(newRep.process)
+        const sameDesc = norm(r.defectDescription) === norm(newRep.defectDescription)
+        return sameDate && sameModel && sameProcess && sameDesc
+      })
+    }
+
+    try {
+      if (isFirebaseConfigured && db) {
+        for (const rep of importedList) {
+          const matched = duplicateMode !== 'add_all' ? findMatch(rep) : null
+
+          if (matched && duplicateMode === 'skip') {
+            skippedCount++
+            continue
+          }
+
+          const payload = {
+            date: rep.date || new Date().toISOString().split('T')[0],
+            process: rep.process || 'SMT',
+            productModel: rep.productModel || 'MDL-GENERIC',
+            machine: rep.machine || '',
+            quantity: Number(rep.quantity) || 0,
+            defectQuantity: Number(rep.defectQuantity) || 0,
+            defectRate: rep.defectRate || '0.00%',
+            responsiblePerson: rep.responsiblePerson || '',
+            assignee: rep.assignee || (user.value ? user.value.displayName : 'QA Engineer'),
+            defectDescription: rep.defectDescription || 'Chưa có mô tả chi tiết',
+            causes: rep.causes || '',
+            improvementMeasures: rep.improvementMeasures || '',
+            progressNote: rep.progressNote || '',
+            creator: user.value ? (user.value.displayName || user.value.email) : 'Admin (Import)',
+            status: rep.status || 'open',
+            severity: rep.severity || 'low',
+            images: matched?.images || [],
+            imageUrl: matched?.imageUrl || '',
+            imagePath: matched?.imagePath || '',
+            updatedAt: serverTimestamp(),
+          }
+
+          if (matched && duplicateMode === 'overwrite') {
+            const docRef = doc(db, 'manufacturing_reports', matched.id)
+            await updateDoc(docRef, payload)
+            updatedCount++
+          } else {
+            await addDoc(collection(db, 'manufacturing_reports'), {
+              ...payload,
+              createdAt: rep.createdAt || new Date().toLocaleDateString('vi-VN'),
+              createdAtTimestamp: serverTimestamp(),
+            })
+            addedCount++
+          }
+        }
+      } else {
+        for (const rep of importedList) {
+          const matchedIndex = duplicateMode !== 'add_all'
+            ? reports.value.findIndex((r) => {
+                return (
+                  norm(r.date) === norm(rep.date) &&
+                  norm(r.productModel) === norm(rep.productModel) &&
+                  norm(r.process) === norm(rep.process) &&
+                  norm(r.defectDescription) === norm(rep.defectDescription)
+                )
+              })
+            : -1
+
+          if (matchedIndex !== -1 && duplicateMode === 'skip') {
+            skippedCount++
+            continue
+          }
+
+          if (matchedIndex !== -1 && duplicateMode === 'overwrite') {
+            reports.value[matchedIndex] = {
+              ...reports.value[matchedIndex],
+              ...rep,
+              images: reports.value[matchedIndex].images || [],
+              imageUrl: reports.value[matchedIndex].imageUrl || '',
+            }
+            updatedCount++
+          } else {
+            reports.value.unshift(rep)
+            addedCount++
+          }
+        }
+        saveLocalReports(reports.value)
+      }
+
+      let summaryMsg = `Đã nhập: Thêm mới ${addedCount}`
+      if (updatedCount > 0) summaryMsg += `, Ghi đè cập nhật ${updatedCount}`
+      if (skippedCount > 0) summaryMsg += `, Bỏ qua ${skippedCount}`
+      message.success(summaryMsg)
+
+      return { success: true, total: importedList.length, added: addedCount, updated: updatedCount, skipped: skippedCount }
+    } catch (err) {
+      console.error('Lỗi batch import:', err)
+      message.error('Lỗi khi lưu dữ liệu import: ' + (err.message || ''))
+      throw err
+    }
+  }
+
   return {
     reports,
+    batchImportReports,
     isFirestoreLoading,
     searchText,
     statusFilter,
@@ -940,6 +1089,7 @@ export function useReports() {
     handleImagesSelected,
     removeExistingImage,
     removeSelectedFile,
+    updateAnnotatedImage,
     clearAllImages,
     getReportImages,
     selectedImageFile,

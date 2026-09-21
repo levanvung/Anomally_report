@@ -24,8 +24,14 @@ import {
   BranchesOutlined,
   DashboardOutlined,
   LoadingOutlined,
+  DownloadOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 import { useAuth } from '../composables/useAuth'
+import ImageMarkerModal from '../components/ImageMarkerModal.vue'
+import ExcelImportModal from '../components/ExcelImportModal.vue'
+import { exportReportsToExcel } from '../utils/excelService'
 
 const { isAdmin, canCreate, canEdit, canDelete } = useAuth()
 
@@ -57,6 +63,7 @@ const {
   handleImagesSelected,
   removeExistingImage,
   removeSelectedFile,
+  updateAnnotatedImage,
   clearAllImages,
   getReportImages,
   selectedImageFile,
@@ -75,6 +82,8 @@ const {
   severityClass,
   statusClass,
   filterByStat,
+  reports,
+  batchImportReports,
   resetFilters,
   openCreate,
   openEdit,
@@ -85,6 +94,36 @@ const {
   removeReport,
   changePage,
 } = useReports()
+
+// ─── Quản lý Import & Export Excel ───
+const isImportModalOpen = ref(false)
+
+function handleExportExcel() {
+  try {
+    const listToExport = filteredReports.value && filteredReports.value.length > 0
+      ? filteredReports.value
+      : reports.value
+    if (!listToExport || listToExport.length === 0) {
+      message.warning('Không có dữ liệu báo cáo nào để xuất')
+      return
+    }
+    const res = exportReportsToExcel(listToExport)
+    message.success(`Đã xuất thành công ${res.count} báo cáo ra file Excel!`)
+  } catch (err) {
+    console.error('Lỗi khi xuất Excel:', err)
+    message.error('Lỗi khi xuất file Excel: ' + (err.message || ''))
+  }
+}
+
+async function handleBatchImported(payload) {
+  try {
+    const records = Array.isArray(payload) ? payload : (payload.records || [])
+    const mode = (payload && payload.mode) ? payload.mode : 'overwrite'
+    await batchImportReports(records, mode)
+  } catch (err) {
+    console.error('Lỗi khi import:', err)
+  }
+}
 
 const fileInputRef = ref(null)
 
@@ -106,6 +145,26 @@ function onFileDrop(e) {
   const files = e.dataTransfer.files
   if (files && files.length > 0) {
     handleImagesSelected(files)
+  }
+}
+
+// ─── Image Marker Modal State & Handlers ───
+const isMarkerModalOpen = ref(false)
+const markerTarget = ref(null)
+
+function openImageMarker(type, index, url, name) {
+  markerTarget.value = {
+    type,
+    index,
+    url,
+    name: name || `image_${index + 1}.jpg`,
+  }
+  isMarkerModalOpen.value = true
+}
+
+function handleMarkerApply(result) {
+  if (markerTarget.value) {
+    updateAnnotatedImage(markerTarget.value, result)
   }
 }
 
@@ -335,8 +394,22 @@ const drawerWidth = computed(() => {
           </h3>
           <span class="table-header-badge">{{ filteredReports.length }} {{ t('records') || 'báo cáo' }}</span>
         </div>
-        <div v-if="canCreate" class="table-header-right">
-          <a-button type="primary" class="table-create-btn" @click="openCreate">
+        <div class="table-header-right">
+          <!-- Nút Xuất Excel: Cho tất cả người dùng -->
+          <a-button class="table-action-btn export-btn" @click="handleExportExcel">
+            <DownloadOutlined /> Xuất Excel
+          </a-button>
+
+          <!-- Nút Nhập Excel: CHỈ ADMIN MỚI CÓ QUYỀN TRUY CẬP -->
+          <a-button
+            v-if="isAdmin"
+            class="table-action-btn import-btn"
+            @click="isImportModalOpen = true"
+          >
+            <UploadOutlined /> Nhập Excel
+          </a-button>
+
+          <a-button v-if="canCreate" type="primary" class="table-create-btn" @click="openCreate">
             <PlusOutlined /> {{ t('createNew') }}
           </a-button>
         </div>
@@ -561,9 +634,22 @@ const drawerWidth = computed(() => {
           <span class="mobile-header-title">{{ t('title') }}</span>
           <span class="table-header-badge">{{ filteredReports.length }}</span>
         </div>
-        <a-button v-if="canCreate" type="primary" size="small" class="table-create-btn" @click="openCreate">
-          <PlusOutlined /> {{ t('createNew') }}
-        </a-button>
+        <div class="mobile-header-right">
+          <a-button size="small" class="table-action-btn export-btn" @click="handleExportExcel">
+            <DownloadOutlined /> Xuất
+          </a-button>
+          <a-button
+            v-if="isAdmin"
+            size="small"
+            class="table-action-btn import-btn"
+            @click="isImportModalOpen = true"
+          >
+            <UploadOutlined /> Nhập
+          </a-button>
+          <a-button v-if="canCreate" type="primary" size="small" class="table-create-btn" @click="openCreate">
+            <PlusOutlined /> {{ t('createNew') }}
+          </a-button>
+        </div>
       </div>
       <!-- Empty State -->
       <div v-if="filteredReports.length === 0" class="empty-box">
@@ -1142,14 +1228,24 @@ const drawerWidth = computed(() => {
                   <img :src="img.url" alt="Existing" class="drawer-img-thumb" />
                   <div class="drawer-img-overlay">
                     <span class="img-badge-existing">Đã lưu</span>
-                    <button
-                      type="button"
-                      class="drawer-img-remove-btn"
-                      title="Xoá ảnh này"
-                      @click="removeExistingImage(idx)"
-                    >
-                      <CloseCircleOutlined />
-                    </button>
+                    <div class="drawer-img-actions">
+                      <button
+                        type="button"
+                        class="drawer-img-action-btn edit"
+                        title="Đánh dấu lỗi trên ảnh (vẽ, khoanh vùng, mũi tên, ghi chú)"
+                        @click.stop="openImageMarker('existing', idx, img.url, img.name)"
+                      >
+                        <EditOutlined />
+                      </button>
+                      <button
+                        type="button"
+                        class="drawer-img-action-btn remove"
+                        title="Xoá ảnh này"
+                        @click.stop="removeExistingImage(idx)"
+                      >
+                        <CloseCircleOutlined />
+                      </button>
+                    </div>
                   </div>
                   <div class="drawer-img-caption" :title="img.name || `Ảnh ${idx + 1}`">
                     {{ img.name || `Ảnh ${idx + 1}` }}
@@ -1172,14 +1268,25 @@ const drawerWidth = computed(() => {
                     </span>
                     <span v-else class="img-badge-new">Mới</span>
 
-                    <button
-                      type="button"
-                      class="drawer-img-remove-btn"
-                      title="Xoá ảnh này"
-                      @click="removeSelectedFile(idx)"
-                    >
-                      <CloseCircleOutlined />
-                    </button>
+                    <div class="drawer-img-actions">
+                      <button
+                        v-if="!item.isCompressing"
+                        type="button"
+                        class="drawer-img-action-btn edit"
+                        title="Đánh dấu lỗi trên ảnh (vẽ, khoanh vùng, mũi tên, ghi chú)"
+                        @click.stop="openImageMarker('selected', idx, item.previewUrl, item.name)"
+                      >
+                        <EditOutlined />
+                      </button>
+                      <button
+                        type="button"
+                        class="drawer-img-action-btn remove"
+                        title="Xoá ảnh này"
+                        @click.stop="removeSelectedFile(idx)"
+                      >
+                        <CloseCircleOutlined />
+                      </button>
+                    </div>
                   </div>
                   <div class="drawer-img-caption" :title="`${item.name} (${formatFileSize(item.compressedSize)})`">
                     <span v-if="!item.isCompressing" class="caption-size-tag">{{ formatFileSize(item.compressedSize) }}</span>
@@ -1247,5 +1354,20 @@ const drawerWidth = computed(() => {
         </div>
       </template>
     </a-drawer>
+
+    <!-- Modal Trình chỉnh sửa & Đánh dấu lỗi trên ảnh -->
+    <ImageMarkerModal
+      v-model:visible="isMarkerModalOpen"
+      :image-url="markerTarget?.url"
+      :image-name="markerTarget?.name"
+      @apply="handleMarkerApply"
+    />
+
+    <!-- Modal Nhập dữ liệu Báo cáo Excel cho Admin -->
+    <ExcelImportModal
+      v-model:visible="isImportModalOpen"
+      :existing-reports="reports"
+      @imported="handleBatchImported"
+    />
   </div>
 </template>

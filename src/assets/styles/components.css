@@ -4278,6 +4278,48 @@
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+/* Nút thao tác trên thẻ ảnh (Sửa / Xoá) */
+.drawer-img-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawer-img-action-btn {
+  border: none;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  backdrop-filter: blur(4px);
+}
+
+.drawer-img-action-btn.edit {
+  background: rgba(14, 165, 233, 0.9);
+  color: #ffffff;
+}
+
+.drawer-img-action-btn.edit:hover {
+  background: #0ea5e9;
+  transform: scale(1.15);
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.4);
+}
+
+.drawer-img-action-btn.remove {
+  background: rgba(239, 68, 68, 0.9);
+  color: #ffffff;
+}
+
+.drawer-img-action-btn.remove:hover {
+  background: #ef4444;
+  transform: scale(1.15);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+}
+
 .drawer-img-remove-btn {
   background: rgba(239, 68, 68, 0.85);
   color: #ffffff;
@@ -4295,6 +4337,634 @@
 .drawer-img-remove-btn:hover {
   background: #ef4444;
   transform: scale(1.15);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   IMAGE MARKER MODAL (EDITOR ĐÁNH DẤU LỖI TRÊN ẢNH)
+   ══════════════════════════════════════════════════════════════════════ */
+.image-marker-modal .ant-modal-content {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
+  color: var(--text-primary);
+}
+
+.image-marker-modal .ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.image-marker-modal .ant-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary) !important;
+}
+
+.marker-editor-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Ribbon Tabs Menu chuyển đổi nhóm tính năng */
+.marker-ribbon-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.ribbon-tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ribbon-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ribbon-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ribbon-tab-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.25);
+}
+
+.ribbon-tab-btn .tab-icon {
+  font-size: 14px;
+}
+
+.ribbon-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Toolbar phía trên */
+.marker-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  min-height: 48px;
+}
+
+.marker-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  margin-right: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.marker-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-default);
+  margin: 0 4px;
+}
+
+.marker-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.marker-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-primary);
+}
+
+.marker-tool-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.marker-tool-btn .tool-icon {
+  font-size: 13px;
+}
+
+/* Bộ tạo số đếm QC Badge */
+.badge-creator-btn-wrap {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 1px;
+}
+
+.qc-badge-btn {
+  background: transparent !important;
+  border: none !important;
+  padding: 4px 7px;
+}
+
+.badge-num-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.badge-counter-stepper {
+  display: flex;
+  align-items: center;
+  border-left: 1px solid var(--border-default);
+  margin-left: 2px;
+}
+
+.badge-counter-stepper button {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 2px 5px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.badge-counter-stepper button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.badge-counter-stepper button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Nhãn dán QC Stickers */
+.qc-stickers-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sticker-btn {
+  font-weight: 600;
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.sticker-btn.warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.sticker-btn.warning:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.sticker-btn.danger {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.sticker-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.sticker-btn.success {
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.sticker-btn.success:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.sticker-btn.short {
+  border-color: rgba(234, 179, 8, 0.4);
+  color: #facc15;
+}
+
+.sticker-btn.short:hover {
+  background: rgba(234, 179, 8, 0.2);
+}
+
+/* Nút Cắt cúp & Crop */
+.crop-start-btn {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.crop-start-btn:hover {
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.crop-apply-btn {
+  background: #10b981;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.crop-apply-btn:hover {
+  background: #059669;
+}
+
+.crop-cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+.crop-cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Bảng chọn màu */
+.marker-color-palette {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-dot:hover {
+  transform: scale(1.18);
+}
+
+.color-dot.active {
+  transform: scale(1.28);
+  border-color: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+/* Thanh trượt điều chỉnh nét vẽ dày/mỏng */
+.stroke-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stroke-slider-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+}
+
+.marker-stroke-range {
+  width: 95px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+
+.stroke-val-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stroke-dot-preview {
+  display: inline-block;
+  border-radius: 50%;
+  transition: all 0.1s ease;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Sliders Ánh sáng & Tương phản */
+.sliders-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider-control-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider-label {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  min-width: 95px;
+}
+
+.marker-slider {
+  width: 90px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.redact-blackout-btn {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.redact-blackout-btn:hover {
+  background: #000000;
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+/* Nút hoàn tác / xoá */
+.marker-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.marker-action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.marker-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.marker-action-btn.delete-selected {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.marker-action-btn.delete-selected:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.marker-action-btn.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+/* Thanh trạng thái hướng dẫn */
+.marker-status-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(14, 165, 233, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  min-height: 32px;
+}
+
+.status-selected-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.status-selected-info.crop-hint {
+  color: #fbbf24;
+}
+
+.status-badge {
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.4);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.status-badge.crop {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.status-desc {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.status-mode-hint {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+/* Canvas Viewport */
+.marker-canvas-viewport {
+  position: relative;
+  width: 100%;
+  min-height: 400px;
+  max-height: 540px;
+  background: #090d16;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+}
+
+.marker-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  z-index: 10;
+}
+
+.marker-loading-overlay .loading-icon {
+  font-size: 24px;
+  color: var(--accent);
+}
+
+.fabric-canvas-container {
+  position: relative;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+}
+
+/* Floating Zoom & Pan Control Bar */
+.marker-floating-zoom-bar {
+  position: absolute;
+  bottom: 14px;
+  right: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zoom-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.zoom-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.zoom-btn.text {
+  width: auto;
+  border-radius: 12px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.zoom-btn.pan-toggle {
+  width: auto;
+  border-radius: 12px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.zoom-btn.pan-toggle.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: bold;
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.zoom-value {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 38px;
+  text-align: center;
+}
+
+.zoom-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
+}
+
+/* Footer modal */
+.marker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-default);
+}
+
+.marker-hints {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.marker-footer-btns {
+  display: flex;
+  gap: 8px;
 }
 
 .drawer-img-caption {
@@ -4464,24 +5134,509 @@
   backdrop-filter: blur(4px);
 }
 
-/* ─── Table Multi Image Badge ─── */
-.table-image-thumb-box {
-  position: relative;
+/* ─── Excel Export & Import Buttons ─── */
+.table-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.multi-img-count-badge {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  background: #0284c7;
+.table-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 6px 14px;
+}
+
+.table-action-btn.export-btn {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.table-action-btn.export-btn:hover {
+  background: #10b981;
   color: #ffffff;
+  border-color: #10b981;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+
+.table-action-btn.import-btn {
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.4);
+  color: #38bdf8;
+}
+
+.table-action-btn.import-btn:hover {
+  background: #0ea5e9;
+  color: #ffffff;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.35);
+  transform: translateY(-1px);
+}
+
+/* ─── Excel Import Modal & Dropzone ─── */
+.excel-import-modal .ant-modal-content {
+  background: #0b1120;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+
+.excel-import-modal .ant-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary) !important;
+}
+
+.excel-import-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.import-dropzone {
+  border: 2px dashed rgba(14, 165, 233, 0.4);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.6);
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.import-dropzone:hover,
+.import-dropzone.is-dragging {
+  border-color: var(--accent);
+  background: rgba(14, 165, 233, 0.08);
+  transform: translateY(-1px);
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.dropzone-icon {
+  font-size: 44px;
+  color: #10b981;
+  margin-bottom: 12px;
+}
+
+.dropzone-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.dropzone-hint {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+/* Template download link */
+.template-download-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.template-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.template-download-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--accent);
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.template-download-link:hover {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+
+/* Summary Bar */
+.import-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.file-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.excel-icon {
+  font-size: 28px;
+  color: #10b981;
+}
+
+.file-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.file-stats {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.sheet-selector-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sheet-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.re-upload-btn {
+  font-size: 12px;
+}
+
+/* Preview Table */
+.preview-table-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+
+.preview-title {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.preview-badge {
+  background: rgba(14, 165, 233, 0.18);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.preview-table-wrap {
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: #090d16;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.preview-table th {
+  position: sticky;
+  top: 0;
+  background: #111827;
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.preview-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.preview-table tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.desc-cell {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.font-bold {
+  font-weight: 600;
+}
+
+.text-danger {
+  color: #f87171;
+}
+
+/* Import Footer */
+.import-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-default);
+}
+
+.import-status-text {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.confirm-import-btn {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  font-weight: 700;
+}
+
+.confirm-import-btn:hover {
+  background: #059669 !important;
+  border-color: #059669 !important;
+}
+
+/* ─── Duplicate Setting Panel & Radio Cards ─── */
+.duplicate-setting-panel {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duplicate-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.duplicate-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.duplicate-panel-title .panel-icon {
+  color: var(--accent);
+  font-size: 15px;
+}
+
+.duplicate-stats-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip-count-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.chip-count-dup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.chip-count-none {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.duplicate-radio-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.dup-radio-card {
+  margin: 0 !important;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px !important;
+  transition: all 0.2s ease;
+  display: flex !important;
+  align-items: flex-start !important;
+}
+
+.dup-radio-card:hover {
+  border-color: rgba(14, 165, 233, 0.4);
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.dup-radio-card.is-selected {
+  border-color: var(--accent);
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.dup-radio-content {
+  margin-left: 6px;
+  line-height: 1.35;
+}
+
+.dup-radio-title {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge-recommended {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
   font-size: 10px;
   font-weight: 700;
   padding: 1px 5px;
-  border-radius: 10px;
-  border: 1.5px solid var(--bg-surface);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  pointer-events: none;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
+.dup-radio-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
 
+/* Preview badges & Table Tags */
+.preview-stats-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-badge.total {
+  background: rgba(14, 165, 233, 0.18);
+  color: var(--accent);
+}
+
+.preview-badge.dup {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.preview-badge.skip {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+}
+
+.badge-new-tag {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-dup-tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-dup-tag.overwrite {
+  background: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.4);
+}
+
+.badge-dup-tag.skip {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.badge-dup-tag.add_all {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
