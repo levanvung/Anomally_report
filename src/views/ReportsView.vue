@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useReports, getDefectRateLevel, commonProcesses } from '../composables/useReports'
 import {
   CheckCircleFilled,
@@ -86,6 +86,31 @@ function onFileDrop(e) {
     handleImageSelected(file)
   }
 }
+
+// ─── Responsive Drawer Width (100% on Mobile/Tablet) ───
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
+
+function handleResize() {
+  windowWidth.value = window.innerWidth
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
+const drawerWidth = computed(() => {
+  if (windowWidth.value <= 768) {
+    return '100%'
+  }
+  if (windowWidth.value <= 1200) {
+    return '540px'
+  }
+  return '620px'
+})
 </script>
 
 <template>
@@ -769,13 +794,14 @@ function onFileDrop(e) {
     <!-- Drawer Tạo / Chỉnh sửa Báo Cáo 15 Cột -->
     <a-drawer
       v-model:open="isModalOpen"
-      width="50%"
+      :width="drawerWidth"
       :title="isEditing ? t('modalEditTitle') : t('modalCreateTitle')"
       placement="right"
       class="report-drawer"
+      :mask-closable="true"
     >
       <template #extra>
-        <div class="drawer-header-actions">
+        <div class="drawer-header-actions desktop-only-actions">
           <a-button @click="isModalOpen = false">
             {{ t('btnCancel') }}
           </a-button>
@@ -964,6 +990,25 @@ function onFileDrop(e) {
           </div>
         </a-form-item>
       </a-form>
+
+      <template #footer>
+        <div class="drawer-footer-actions">
+          <a-button class="drawer-cancel-btn" size="large" @click="isModalOpen = false">
+            {{ t('btnCancel') }}
+          </a-button>
+          <a-button
+            type="primary"
+            size="large"
+            class="drawer-save-btn"
+            style="color:white"
+            :loading="isSaving"
+            :disabled="!form.productModel || !form.machine || !form.defectDescription"
+            @click="saveReport"
+          >
+            {{ isSaving ? 'Đang lưu...' : t('btnSave') }}
+          </a-button>
+        </div>
+      </template>
     </a-drawer>
   </div>
 </template>

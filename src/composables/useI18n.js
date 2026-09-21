@@ -20,7 +20,7 @@ export const messages = {
     eyebrow: 'TRUNG TÂM THEO DÕI SỰ CỐ • VẬN HÀNH THỜI GIAN THỰC',
     title: 'Báo cáo bất thường',
     subtitle: 'Hệ thống giám sát, phát hiện và cập nhật tiến độ xử lý các sự vụ, rủi ro và tín hiệu bất thường trong toàn doanh nghiệp.',
-    createNew: 'Báo cáo bất thường mới',
+    createNew: 'Thêm mới',
 
     // Stats
     totalReports: 'Tổng số sự vụ',
@@ -207,7 +207,7 @@ export const messages = {
     eyebrow: 'INCIDENT OPERATIONS CENTER • REAL-TIME STREAM',
     title: 'Anomaly Reports',
     subtitle: 'Enterprise platform to detect, classify, and track resolution workflows for anomalies, hazards, and operational risks.',
-    createNew: 'New Anomaly Report',
+    createNew: 'Create new',
 
     // Stats
     totalReports: 'Total Incidents',

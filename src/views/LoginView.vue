@@ -355,25 +355,8 @@ function fillDemoAccount() {
     </div>
 
     <div class="auth-container">
-      <!-- Brand Header with Bouncing Jelly Mascot Avatar -->
+      <!-- Brand Header -->
       <div class="auth-brand">
-        <div
-          class="auth-mascot-logo-wrap"
-          :class="{ 'is-focused': isInputFocused }"
-        >
-          <!-- Ground gelatin shadow -->
-          <div class="mascot-ground-shadow"></div>
-          <!-- Ambient glowing aura -->
-          <div class="mascot-aura-glow"></div>
-
-          <!-- The transparent character mascot -->
-          <img
-            :src="qcAvatar"
-            alt="QC Inspector Mascot"
-            class="mascot-jelly-img"
-          />
-        </div>
-
         <h1>{{ t('loginTitle') }}</h1>
         <p>{{ t('loginSubtitle') }}</p>
       </div>
@@ -382,6 +365,24 @@ function fillDemoAccount() {
       <div v-if="!isFirebaseConfigured" class="demo-notice-badge">
         <SafetyCertificateOutlined />
         <span>{{ t('demoModeNotice') }}</span>
+      </div>
+
+      <!-- Mascot Avatar sitting directly flush on top of the Auth Card with white border -->
+      <div
+        class="auth-mascot-logo-wrap"
+        :class="{ 'is-focused': isInputFocused }"
+      >
+        <!-- Ground gelatin shadow -->
+        <div class="mascot-ground-shadow"></div>
+        <!-- Ambient glowing aura -->
+        <div class="mascot-aura-glow"></div>
+
+        <!-- The transparent character mascot with crisp white border -->
+        <img
+          :src="qcAvatar"
+          alt="QC Inspector Mascot"
+          class="mascot-jelly-img"
+        />
       </div>
 
       <!-- Card xác nhận Email đã gửi -->
