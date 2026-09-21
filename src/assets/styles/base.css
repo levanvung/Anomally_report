@@ -351,6 +351,46 @@ a:hover {
   backdrop-filter: blur(8px);
 }
 
+/* Ant Drawer dark */
+.ant-drawer-content,
+.ant-drawer-wrapper-body,
+.ant-drawer-body {
+  background: var(--bg-deep) !important;
+  color: var(--text-primary) !important;
+}
+
+.ant-drawer-header {
+  background: var(--bg-surface) !important;
+  border-bottom: 1px solid var(--border-default) !important;
+  padding: 16px 24px !important;
+}
+
+.ant-drawer-title {
+  color: var(--text-primary) !important;
+  font-size: 16.5px !important;
+  font-weight: 700 !important;
+  font-family: var(--font-heading) !important;
+}
+
+.ant-drawer-close {
+  color: var(--text-tertiary) !important;
+}
+
+.ant-drawer-close:hover {
+  color: var(--text-primary) !important;
+}
+
+.ant-drawer-footer {
+  background: var(--bg-surface) !important;
+  border-top: 1px solid var(--border-default) !important;
+  padding: 14px 24px !important;
+}
+
+.ant-drawer-mask {
+  background: rgba(9, 13, 22, 0.75) !important;
+  backdrop-filter: blur(8px);
+}
+
 /* Ant Form dark */
 .ant-form-item-label > label {
   color: var(--text-secondary) !important;

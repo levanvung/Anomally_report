@@ -19,6 +19,8 @@ export const isFirebaseConfigured = Boolean(
   !firebaseConfig.apiKey.includes('your_api_key')
 )
 
+export const isStorageEnabled = import.meta.env.VITE_ENABLE_FIREBASE_STORAGE === 'true'
+
 let app = null
 let auth = null
 let db = null

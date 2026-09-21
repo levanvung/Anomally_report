@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useReports, getDefectRateLevel, commonProcesses } from '../composables/useReports'
+import { useReports, getDefectRateLevel, commonProcesses, formatFileSize } from '../composables/useReports'
 import {
   CheckCircleFilled,
   DeleteOutlined,
@@ -20,6 +20,10 @@ import {
   UserOutlined,
   AppstoreOutlined,
   FileTextOutlined,
+  ThunderboltOutlined,
+  BranchesOutlined,
+  DashboardOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons-vue'
 import { useAuth } from '../composables/useAuth'
 
@@ -30,6 +34,7 @@ const {
   statusFilter,
   severityFilter,
   processFilter,
+  dateRange,
   activeStat,
   currentPage,
   pageSize,
@@ -37,9 +42,23 @@ const {
   isEditing,
   editingId,
   isSaving,
+  showDeleteModal,
+  reportToDelete,
+  isDeleting,
+  cancelDelete,
+  executeDelete,
   isDetailOpen,
   selectedReport,
   form,
+  existingImages,
+  selectedFiles,
+  totalImagesCount,
+  compressionSummary,
+  handleImagesSelected,
+  removeExistingImage,
+  removeSelectedFile,
+  clearAllImages,
+  getReportImages,
   selectedImageFile,
   imagePreviewUrl,
   handleImageSelected,
@@ -48,6 +67,8 @@ const {
   filteredReports,
   pagedReports,
   stats,
+  processStats,
+  toggleProcessFilter,
   t,
   severityLabels,
   statusLabels,
@@ -74,16 +95,17 @@ function triggerFileInput() {
 }
 
 function onFileChange(e) {
-  const file = e.target.files && e.target.files[0]
-  if (file) {
-    handleImageSelected(file)
+  const files = e.target.files
+  if (files && files.length > 0) {
+    handleImagesSelected(files)
   }
+  if (e.target) e.target.value = ''
 }
 
 function onFileDrop(e) {
-  const file = e.dataTransfer.files && e.dataTransfer.files[0]
-  if (file && file.type.startsWith('image/')) {
-    handleImageSelected(file)
+  const files = e.dataTransfer.files
+  if (files && files.length > 0) {
+    handleImagesSelected(files)
   }
 }
 
@@ -126,69 +148,73 @@ const drawerWidth = computed(() => {
       </div>
     </div>
 
-    <!-- Stats Grid (Clickable to Filter) -->
+    <!-- 4 Thẻ Card Công Đoạn Sản Xuất: SMT, AI, DIP, AVR (Nhấp để lọc nhanh theo công đoạn) -->
     <div class="stats-grid">
+      <!-- Card SMT -->
       <div
-        class="stat-card stat-total animate-in stagger-1"
-        :class="{ 'active-stat': activeStat === 'all' }"
-        :title="t('filterAll')"
-        @click="filterByStat('all')"
+        class="stat-card stat-smt animate-in stagger-1"
+        :class="{ 'active-stat': processFilter === 'SMT' }"
+        title="Lọc báo cáo công đoạn SMT (Nhấp lần nữa để bỏ lọc)"
+        @click="toggleProcessFilter('SMT')"
       >
         <div class="stat-top">
-          <span>{{ t('totalReports') }}</span>
-          <div class="stat-icon"><FileSearchOutlined /></div>
+          <span>Công đoạn SMT</span>
+          <div class="stat-icon cyan"><ToolOutlined /></div>
         </div>
-        <strong>{{ stats.total }}</strong>
+        <strong>{{ processStats.smt }}</strong>
         <div class="stat-foot">
-          <span class="trend-up">100%</span> {{ t('totalFoot') }}
+          <span class="trend-neutral">{{ processStats.smtPercent }}%</span> tổng báo cáo phát sinh
         </div>
       </div>
 
+      <!-- Card AI -->
       <div
-        class="stat-card stat-warn animate-in stagger-2"
-        :class="{ 'active-stat': activeStat === 'attention' }"
-        :title="t('attentionNeeded')"
-        @click="filterByStat('attention')"
+        class="stat-card stat-ai animate-in stagger-2"
+        :class="{ 'active-stat': processFilter === 'AI' }"
+        title="Lọc báo cáo công đoạn AI (Nhấp lần nữa để bỏ lọc)"
+        @click="toggleProcessFilter('AI')"
       >
         <div class="stat-top">
-          <span>{{ t('attentionNeeded') }}</span>
-          <div class="stat-icon orange"><ExclamationCircleFilled /></div>
+          <span>Công đoạn AI</span>
+          <div class="stat-icon purple"><ThunderboltOutlined /></div>
         </div>
-        <strong>{{ stats.open + stats.investigating }}</strong>
+        <strong>{{ processStats.ai }}</strong>
         <div class="stat-foot">
-          <span class="trend-warn">{{ t('highPriority') }}</span> {{ t('attentionFoot') }}
+          <span class="trend-warn">{{ processStats.aiPercent }}%</span> tổng báo cáo phát sinh
         </div>
       </div>
 
+      <!-- Card DIP -->
       <div
-        class="stat-card stat-investigating animate-in stagger-3"
-        :class="{ 'active-stat': activeStat === 'investigating' }"
-        :title="t('investigating')"
-        @click="filterByStat('investigating')"
+        class="stat-card stat-dip animate-in stagger-3"
+        :class="{ 'active-stat': processFilter === 'DIP' }"
+        title="Lọc báo cáo công đoạn DIP (Nhấp lần nữa để bỏ lọc)"
+        @click="toggleProcessFilter('DIP')"
       >
         <div class="stat-top">
-          <span>{{ t('investigating') }}</span>
-          <div class="stat-icon blue"><SearchOutlined /></div>
+          <span>Công đoạn DIP</span>
+          <div class="stat-icon amber"><BranchesOutlined /></div>
         </div>
-        <strong>{{ stats.investigating }}</strong>
+        <strong>{{ processStats.dip }}</strong>
         <div class="stat-foot">
-          <span class="trend-neutral">{{ stats.total ? Math.round((stats.investigating / stats.total) * 100) : 0 }}%</span> {{ t('investigatingFoot') }}
+          <span class="trend-warn">{{ processStats.dipPercent }}%</span> tổng báo cáo phát sinh
         </div>
       </div>
 
+      <!-- Card AVR -->
       <div
-        class="stat-card stat-resolved animate-in stagger-4"
-        :class="{ 'active-stat': activeStat === 'resolved' }"
-        :title="t('resolved')"
-        @click="filterByStat('resolved')"
+        class="stat-card stat-avr animate-in stagger-4"
+        :class="{ 'active-stat': processFilter === 'AVR' }"
+        title="Lọc báo cáo công đoạn AVR (Nhấp lần nữa để bỏ lọc)"
+        @click="toggleProcessFilter('AVR')"
       >
         <div class="stat-top">
-          <span>{{ t('resolved') }}</span>
-          <div class="stat-icon green"><CheckCircleFilled /></div>
+          <span>Công đoạn AVR</span>
+          <div class="stat-icon emerald"><DashboardOutlined /></div>
         </div>
-        <strong>{{ stats.resolved }}</strong>
+        <strong>{{ processStats.avr }}</strong>
         <div class="stat-foot">
-          <span class="trend-up">↗ {{ stats.total ? Math.round((stats.resolved / stats.total) * 100) : 0 }}%</span> {{ t('resolvedRate') }}
+          <span class="trend-up">{{ processStats.avrPercent }}%</span> tổng báo cáo phát sinh
         </div>
       </div>
     </div>
@@ -238,6 +264,20 @@ const drawerWidth = computed(() => {
             <a-select-option value="closed">{{ t('statusClosed') }}</a-select-option>
           </a-select>
 
+          <!-- Date Range Filter (Bộ lọc theo khoảng ngày) -->
+          <a-range-picker
+            v-model:value="dateRange"
+            value-format="YYYY-MM-DD"
+            format="DD/MM/YYYY"
+            class="filter-date-picker"
+            size="large"
+            :placeholder="t('dateRangePlaceholder')"
+            allow-clear
+            @change="currentPage = 1"
+          >
+            <template #suffixIcon><CalendarOutlined /></template>
+          </a-range-picker>
+
           <a-button class="filter-reset-btn" @click="resetFilters">
             <ReloadOutlined /> {{ t('resetFilter') }}
           </a-button>
@@ -249,7 +289,7 @@ const drawerWidth = computed(() => {
         <span class="chip-label">{{ t('quickFilterLabel') }}</span>
         <button
           class="chip-btn"
-          :class="{ active: activeStat === 'all' && statusFilter === 'all' && severityFilter === 'all' && processFilter === 'all' }"
+          :class="{ active: activeStat === 'all' && statusFilter === 'all' && severityFilter === 'all' && processFilter === 'all' && !dateRange }"
           @click="resetFilters"
         >
           {{ t('filterAll') }} ({{ stats.total }})
@@ -397,15 +437,28 @@ const drawerWidth = computed(() => {
         </a-table-column>
 
         <!-- 11. Defect image Column -->
-        <a-table-column :title="t('colDefectImage')" key="defectImage" :width="105" align="center">
+        <a-table-column :title="t('colDefectImage')" key="imageUrl" :width="110" align="center">
           <template #default="{ record }">
             <div class="table-img-cell">
-              <div v-if="record.imageUrl" class="table-image-thumb-box" :title="t('viewFullImage')">
-                <a-image
-                  :src="record.imageUrl"
-                  :alt="record.productModel"
-                  class="table-image-thumb"
-                />
+              <div v-if="getReportImages(record).length > 0" class="table-image-thumb-box" :title="t('viewFullImage')">
+                <a-image-preview-group>
+                  <a-image
+                    :src="getReportImages(record)[0].url"
+                    :alt="record.productModel"
+                    class="table-image-thumb"
+                  />
+                  <!-- Hidden extra images for lightbox paging -->
+                  <div style="display: none;">
+                    <a-image
+                      v-for="(img, idx) in getReportImages(record).slice(1)"
+                      :key="idx"
+                      :src="img.url"
+                    />
+                  </div>
+                </a-image-preview-group>
+                <span v-if="getReportImages(record).length > 1" class="multi-img-count-badge">
+                  +{{ getReportImages(record).length - 1 }}
+                </span>
               </div>
               <div v-else class="table-no-img" :title="t('noImage')">
                 <PictureOutlined />
@@ -570,17 +623,27 @@ const drawerWidth = computed(() => {
           </div>
 
           <!-- Defect Photo Banner (Hiển thị to rõ trên Mobile khi có ảnh) -->
-          <div v-if="record.imageUrl" class="mobile-card-photo-banner">
-            <a-image
-              :src="record.imageUrl"
-              :alt="record.productModel"
-              class="mobile-card-banner-img"
-            />
+          <div v-if="getReportImages(record).length > 0" class="mobile-card-photo-banner">
+            <a-image-preview-group>
+              <a-image
+                :src="getReportImages(record)[0].url"
+                :alt="record.productModel"
+                class="mobile-card-banner-img"
+              />
+              <div style="display: none;">
+                <a-image
+                  v-for="(img, idx) in getReportImages(record).slice(1)"
+                  :key="idx"
+                  :src="img.url"
+                />
+              </div>
+            </a-image-preview-group>
             <div class="mobile-photo-tag">
-              <PictureOutlined /> <span>{{ t('colDefectImage') }}</span>
+              <PictureOutlined />
+              <span>{{ getReportImages(record).length > 1 ? `${getReportImages(record).length} ảnh lỗi` : t('colDefectImage') }}</span>
             </div>
             <div class="mobile-photo-zoom-badge">
-              <span>🔍 Phóng to & vuốt chọn vùng xem</span>
+              <span>🔍 Phóng to & xem toàn bộ ảnh</span>
             </div>
           </div>
 
@@ -710,16 +773,41 @@ const drawerWidth = computed(() => {
           </div>
         </div>
 
-        <!-- Defect Image display -->
-        <div v-if="selectedReport.imageUrl" class="detail-image-box">
-          <div class="detail-section-title">📷 {{ t('labelDefectImage') }}</div>
-          <div class="detail-image-preview">
-            <a-image
-              :src="selectedReport.imageUrl"
-              :alt="selectedReport.productModel"
-              class="detail-report-img"
-            />
+        <!-- Defect Image display (Hỗ trợ hiển thị nhiều ảnh Gallery) -->
+        <div v-if="getReportImages(selectedReport).length > 0" class="detail-image-box">
+          <div class="detail-section-title">
+            <span>📷 {{ t('labelDefectImage') }} ({{ getReportImages(selectedReport).length }} ảnh)</span>
+            <span class="detail-gallery-hint">Nhấp vào ảnh để xem kích thước lớn & chuyển ảnh</span>
           </div>
+
+          <a-image-preview-group>
+            <!-- Nếu có 1 ảnh duy nhất: hiển thị lớn nổi bật -->
+            <div v-if="getReportImages(selectedReport).length === 1" class="detail-single-image-wrap">
+              <a-image
+                :src="getReportImages(selectedReport)[0].url"
+                :alt="selectedReport.productModel"
+                class="detail-report-img"
+              />
+            </div>
+
+            <!-- Nếu có nhiều ảnh: hiển thị lưới Gallery ảnh hiện đại -->
+            <div v-else class="detail-images-gallery-grid">
+              <div
+                v-for="(img, idx) in getReportImages(selectedReport)"
+                :key="idx"
+                class="detail-gallery-item"
+              >
+                <a-image
+                  :src="img.url"
+                  :alt="img.name || `${selectedReport.productModel} - ${idx + 1}`"
+                  class="detail-gallery-thumb"
+                />
+                <div class="detail-gallery-badge">
+                  <span>#{{ idx + 1 }}</span>
+                </div>
+              </div>
+            </div>
+          </a-image-preview-group>
         </div>
 
         <!-- Personnel & Tracking Grid -->
@@ -784,8 +872,77 @@ const drawerWidth = computed(() => {
             </button>
           </div>
 
-          <a-button v-if="canEdit" type="primary" style="margin-left: auto;" @click="openEdit(selectedReport)">
-            <EditOutlined /> {{ t('editInfo') }}
+          <div class="detail-actions-right" style="margin-left: auto; display: flex; gap: 8px;">
+            <a-button v-if="canEdit" type="primary" @click="openEdit(selectedReport)">
+              <EditOutlined /> {{ t('editInfo') }}
+            </a-button>
+            <a-button v-if="canDelete" danger @click="removeReport(selectedReport)">
+              <DeleteOutlined /> {{ t('actionDelete') }}
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- Modal Xác Nhận Xoá Báo Cáo Thay Thế Alert Trình Duyệt -->
+    <a-modal
+      v-model:open="showDeleteModal"
+      :title="null"
+      :footer="null"
+      :width="460"
+      class="delete-confirm-modal"
+      centered
+      :destroy-on-close="true"
+    >
+      <div v-if="reportToDelete" class="delete-modal-content">
+        <div class="delete-modal-header">
+          <div class="delete-icon-wrapper">
+            <ExclamationCircleFilled class="delete-warning-icon" />
+          </div>
+          <div class="delete-header-text">
+            <h3 class="delete-modal-title">{{ t('modalDeleteTitle') }}</h3>
+            <p class="delete-modal-desc">{{ t('modalDeleteWarning') }}</p>
+          </div>
+        </div>
+
+        <!-- Thẻ preview chi tiết báo cáo cần xoá -->
+        <div class="delete-target-card">
+          <div class="delete-target-top">
+            <span class="delete-target-id">{{ reportToDelete.id }}</span>
+            <span class="delete-target-badge">{{ reportToDelete.process }}</span>
+            <span class="delete-target-machine">⚙️ {{ reportToDelete.machine }}</span>
+          </div>
+
+          <div class="delete-target-model">
+            {{ reportToDelete.productModel }}
+          </div>
+
+          <div class="delete-target-defect">
+            <span class="defect-label">Mô tả:</span>
+            {{ reportToDelete.defectDescription }}
+          </div>
+
+          <div class="delete-target-meta">
+            <span>📅 {{ reportToDelete.date }}</span>
+            <span>👤 {{ reportToDelete.responsiblePerson || reportToDelete.creator }}</span>
+            <span v-if="reportToDelete.imageUrl" class="has-img-badge">📷 Có ảnh đính kèm</span>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="delete-modal-actions">
+          <a-button class="delete-btn-cancel" size="large" @click="cancelDelete">
+            {{ t('btnCancel') }}
+          </a-button>
+          <a-button
+            type="primary"
+            danger
+            size="large"
+            class="delete-btn-confirm"
+            :loading="isDeleting"
+            @click="executeDelete"
+          >
+            <DeleteOutlined /> {{ isDeleting ? 'Đang xoá...' : t('btnConfirmDelete') }}
           </a-button>
         </div>
       </div>
@@ -799,13 +956,16 @@ const drawerWidth = computed(() => {
       placement="right"
       class="report-drawer"
       :mask-closable="true"
+      :body-style="{ background: 'var(--bg-deep)', color: 'var(--text-primary)' }"
+      :header-style="{ background: 'var(--bg-surface)', borderColor: 'var(--border-default)' }"
+      :footer-style="{ background: 'var(--bg-surface)', borderColor: 'var(--border-default)' }"
     >
 
 
       <a-form layout="vertical" class="report-form">
         <!-- Nhóm 1: Ngày, Công đoạn, Model & Máy -->
         <div class="form-grid">
-          <a-form-item :label="t('labelDate')" required>
+          <a-form-item :label="t('labelDate')">
             <a-input
               v-model:value="form.date"
               type="date"
@@ -813,7 +973,7 @@ const drawerWidth = computed(() => {
             />
           </a-form-item>
 
-          <a-form-item :label="t('labelProcess')" required>
+          <a-form-item :label="t('labelProcess')">
             <a-select v-model:value="form.process" size="large">
               <a-select-option v-for="proc in commonProcesses" :key="proc" :value="proc">
                 {{ proc }}
@@ -823,7 +983,7 @@ const drawerWidth = computed(() => {
         </div>
 
         <div class="form-grid">
-          <a-form-item :label="t('labelProductModel')" required>
+          <a-form-item :label="t('labelProductModel')">
             <a-input
               v-model:value="form.productModel"
               size="large"
@@ -831,7 +991,7 @@ const drawerWidth = computed(() => {
             />
           </a-form-item>
 
-          <a-form-item :label="t('labelMachine')" required>
+          <a-form-item :label="t('labelMachine')">
             <a-input
               v-model:value="form.machine"
               size="large"
@@ -842,7 +1002,7 @@ const drawerWidth = computed(() => {
 
         <!-- Nhóm 2: Số lượng, Số lượng lỗi & Tỷ lệ lỗi tự tính -->
         <div class="form-grid-3">
-          <a-form-item :label="t('labelQuantity')" required>
+          <a-form-item :label="t('labelQuantity')">
             <a-input-number
               v-model:value="form.quantity"
               :min="1"
@@ -853,7 +1013,7 @@ const drawerWidth = computed(() => {
             />
           </a-form-item>
 
-          <a-form-item :label="t('labelDefectQuantity')" required>
+          <a-form-item :label="t('labelDefectQuantity')">
             <a-input-number
               v-model:value="form.defectQuantity"
               :min="0"
@@ -879,7 +1039,7 @@ const drawerWidth = computed(() => {
 
         <!-- Nhóm 3: Nhân sự & Trạng thái -->
         <div class="form-grid">
-          <a-form-item :label="t('labelResponsiblePerson')" required>
+          <a-form-item :label="t('labelResponsiblePerson')">
             <a-input
               v-model:value="form.responsiblePerson"
               size="large"
@@ -887,7 +1047,7 @@ const drawerWidth = computed(() => {
             />
           </a-form-item>
 
-          <a-form-item :label="t('labelAssignee')" required>
+          <a-form-item :label="t('labelAssignee')">
             <a-input
               v-model:value="form.assignee"
               size="large"
@@ -916,7 +1076,7 @@ const drawerWidth = computed(() => {
         </div>
 
         <!-- Nhóm 4: Mô tả lỗi & Ghi chú tiến độ -->
-        <a-form-item :label="t('labelDefectDescription')" required>
+        <a-form-item :label="t('labelDefectDescription')">
           <a-textarea
             v-model:value="form.defectDescription"
             :rows="3"
@@ -932,35 +1092,128 @@ const drawerWidth = computed(() => {
           />
         </a-form-item>
 
-        <!-- Nhóm 5: Ảnh lỗi hiện trường -->
-        <a-form-item :label="t('labelDefectImage')">
+        <!-- Nhóm 5: Upload nhiều ảnh lỗi hiện trường -->
+        <a-form-item>
+          <template #label>
+            <div class="drawer-image-label-row">
+              <span>{{ t('labelDefectImage') }}</span>
+              <span v-if="totalImagesCount > 0" class="drawer-img-count-tag">
+                {{ totalImagesCount }} ảnh đã chọn
+              </span>
+            </div>
+          </template>
+
           <div class="image-upload-wrapper">
             <input
               type="file"
               ref="fileInputRef"
+              multiple
               accept="image/*"
               style="display: none;"
               @change="onFileChange"
             />
 
-            <!-- Preview if image exists or selected -->
-            <div v-if="imagePreviewUrl || form.imageUrl" class="image-preview-card">
-              <img :src="imagePreviewUrl || form.imageUrl" alt="Preview" class="upload-thumbnail" />
-              <div class="image-preview-meta">
-                <span class="preview-filename">{{ selectedImageFile ? selectedImageFile.name : (form.productModel ? `Ảnh lỗi ${form.productModel}` : 'Ảnh lỗi hiện trường') }}</span>
-                <span v-if="selectedImageFile" class="preview-filesize">{{ (selectedImageFile.size / 1024).toFixed(1) }} KB</span>
+            <!-- Thanh thông báo tính năng Nén ảnh tự động -->
+            <div class="drawer-compression-banner">
+              <div class="compression-banner-info">
+                <ThunderboltOutlined class="compression-banner-icon" />
+                <span class="compression-banner-title">Tự động nén ảnh:</span>
+                <span class="compression-banner-desc">Chuẩn hóa 1280px, tối ưu ~90% dung lượng giúp tải nhanh và lưu tối đa ảnh</span>
               </div>
-              <button
-                type="button"
-                class="remove-image-btn"
-                :title="t('removeImage')"
-                @click="removeAttachedImage"
-              >
-                <CloseCircleOutlined /> {{ t('removeImage') }}
-              </button>
+              <div v-if="compressionSummary && compressionSummary.count > 0" class="compression-banner-stats">
+                <span v-if="compressionSummary.isCompressingAny" class="compression-pill compressing">
+                  <LoadingOutlined spin /> Đang nén...
+                </span>
+                <span v-else class="compression-pill saved" :title="`Gốc: ${compressionSummary.formattedOrig} ➔ Nén: ${compressionSummary.formattedComp}`">
+                  Đã giảm {{ compressionSummary.formattedSaved }} (-{{ compressionSummary.ratio }}%)
+                </span>
+              </div>
             </div>
 
-            <!-- Upload drop area if no image -->
+            <!-- Danh sách ảnh đã chọn / đã có trong báo cáo -->
+            <div v-if="totalImagesCount > 0" class="drawer-multi-images-container">
+              <div class="drawer-images-grid">
+                <!-- Ảnh đã lưu trước đó (existingImages) -->
+                <div
+                  v-for="(img, idx) in existingImages"
+                  :key="'exist_' + idx"
+                  class="drawer-img-card"
+                >
+                  <img :src="img.url" alt="Existing" class="drawer-img-thumb" />
+                  <div class="drawer-img-overlay">
+                    <span class="img-badge-existing">Đã lưu</span>
+                    <button
+                      type="button"
+                      class="drawer-img-remove-btn"
+                      title="Xoá ảnh này"
+                      @click="removeExistingImage(idx)"
+                    >
+                      <CloseCircleOutlined />
+                    </button>
+                  </div>
+                  <div class="drawer-img-caption" :title="img.name || `Ảnh ${idx + 1}`">
+                    {{ img.name || `Ảnh ${idx + 1}` }}
+                  </div>
+                </div>
+
+                <!-- Ảnh mới chọn chờ lưu (selectedFiles) -->
+                <div
+                  v-for="(item, idx) in selectedFiles"
+                  :key="item.id"
+                  class="drawer-img-card new-file"
+                >
+                  <img :src="item.previewUrl" alt="New" class="drawer-img-thumb" />
+                  <div class="drawer-img-overlay">
+                    <span v-if="item.isCompressing" class="img-badge-compressing">
+                      <LoadingOutlined spin /> Nén...
+                    </span>
+                    <span v-else-if="item.savings > 0" class="img-badge-saved" :title="`Gốc: ${formatFileSize(item.originalSize)} ➔ Nén: ${formatFileSize(item.compressedSize)}`">
+                      ⚡ -{{ item.savings }}%
+                    </span>
+                    <span v-else class="img-badge-new">Mới</span>
+
+                    <button
+                      type="button"
+                      class="drawer-img-remove-btn"
+                      title="Xoá ảnh này"
+                      @click="removeSelectedFile(idx)"
+                    >
+                      <CloseCircleOutlined />
+                    </button>
+                  </div>
+                  <div class="drawer-img-caption" :title="`${item.name} (${formatFileSize(item.compressedSize)})`">
+                    <span v-if="!item.isCompressing" class="caption-size-tag">{{ formatFileSize(item.compressedSize) }}</span>
+                    {{ item.name }}
+                  </div>
+                </div>
+
+                <!-- Nút bấm thêm ảnh nhanh trong lưới -->
+                <div class="drawer-add-more-card" @click="triggerFileInput">
+                  <PlusOutlined class="add-more-icon" />
+                  <span>Thêm ảnh</span>
+                </div>
+              </div>
+
+              <!-- Thanh công cụ nhỏ bên dưới danh sách ảnh -->
+              <div class="drawer-images-footer">
+                <button
+                  type="button"
+                  class="drawer-clear-all-btn"
+                  @click="clearAllImages"
+                >
+                  <DeleteOutlined /> Xoá tất cả ảnh
+                </button>
+                <button
+                  type="button"
+                  class="drawer-add-files-btn"
+                  @click="triggerFileInput"
+                >
+                  <UploadOutlined /> Chọn thêm ảnh từ máy
+                </button>
+              </div>
+            </div>
+
+            <!-- Vùng kéo thả khi chưa có ảnh nào -->
             <div
               v-else
               class="upload-dropzone"
@@ -969,8 +1222,8 @@ const drawerWidth = computed(() => {
               @drop.prevent="onFileDrop"
             >
               <UploadOutlined class="upload-icon" />
-              <div class="upload-text">{{ t('uploadImagePlaceholder') }}</div>
-              <div class="upload-hint">{{ t('imageFormatNotice') }}</div>
+              <div class="upload-text">Nhấp hoặc kéo thả nhiều ảnh lỗi vào đây</div>
+              <div class="upload-hint">Tự động nén thông minh tối ưu dung lượng (JPG, PNG, WEBP)</div>
             </div>
           </div>
         </a-form-item>
@@ -987,7 +1240,6 @@ const drawerWidth = computed(() => {
             class="drawer-save-btn"
             style="color:white"
             :loading="isSaving"
-            :disabled="!form.productModel || !form.machine || !form.defectDescription"
             @click="saveReport"
           >
             {{ isSaving ? 'Đang lưu...' : t('btnSave') }}

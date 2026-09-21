@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from 'vue'
+import { message } from 'ant-design-vue'
 import {
   collection,
   doc,
@@ -16,9 +17,12 @@ import {
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage'
-import { db, storage, isFirebaseConfigured } from '../firebase/config'
+import { db, storage, isFirebaseConfigured, isStorageEnabled } from '../firebase/config'
 import { useAuth } from './useAuth'
 import { useI18n } from './useI18n'
+import { compressImage, formatFileSize } from '../utils/imageCompressor'
+
+export { formatFileSize }
 
 const LOCAL_STORAGE_KEY = 'sentinel_reports_manufacturing_v3'
 
@@ -202,18 +206,23 @@ const initialReports = [
 
 function loadLocalReports() {
   const data = localStorage.getItem(LOCAL_STORAGE_KEY)
-  if (data) {
+  if (data !== null) {
     try {
       const parsed = JSON.parse(data)
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].productModel) {
+      if (Array.isArray(parsed)) {
         return parsed
       }
     } catch {
       // Fallback
     }
   }
-  saveLocalReports(initialReports)
-  return initialReports
+  // Chỉ nạp dữ liệu mẫu ban đầu nếu hệ thống chưa từng khởi tạo
+  if (!localStorage.getItem('sentinel_initialized_flag')) {
+    localStorage.setItem('sentinel_initialized_flag', 'true')
+    saveLocalReports(initialReports)
+    return initialReports
+  }
+  return []
 }
 
 function saveLocalReports(data) {
@@ -223,21 +232,31 @@ function saveLocalReports(data) {
 const reports = ref(loadLocalReports())
 const isFirestoreLoading = ref(false)
 
-// Khởi tạo Firestore realtime listener nếu cấu hình Firebase
+// Khởi tạo Firestore realtime listener kết nối dữ liệu thật
 if (isFirebaseConfigured && db) {
   isFirestoreLoading.value = true
   try {
-    const q = query(collection(db, 'manufacturing_reports'), orderBy('createdAtTimestamp', 'desc'))
+    const colRef = collection(db, 'manufacturing_reports')
     onSnapshot(
-      q,
+      colRef,
       (snapshot) => {
         if (!snapshot.empty) {
-          reports.value = snapshot.docs.map((docSnap) => ({
+          const list = snapshot.docs.map((docSnap) => ({
             id: docSnap.id,
             ...docSnap.data(),
           }))
+          // Sắp xếp báo cáo mới nhất lên đầu (theo timestamp hoặc date)
+          list.sort((a, b) => {
+            const timeA = a.createdAtTimestamp?.toMillis ? a.createdAtTimestamp.toMillis() : new Date(a.date || a.createdAt || 0).getTime()
+            const timeB = b.createdAtTimestamp?.toMillis ? b.createdAtTimestamp.toMillis() : new Date(b.date || b.createdAt || 0).getTime()
+            return timeB - timeA
+          })
+          reports.value = list
+          saveLocalReports(list)
         } else {
-          seedInitialFirestoreData()
+          // Khi người dùng đã xoá toàn bộ báo cáo, giữ trạng thái rỗng, KHÔNG tự động tạo lại
+          reports.value = []
+          saveLocalReports([])
         }
         isFirestoreLoading.value = false
       },
@@ -255,19 +274,8 @@ if (isFirebaseConfigured && db) {
 }
 
 async function seedInitialFirestoreData() {
-  if (!isFirebaseConfigured || !db) return
-  try {
-    for (const item of initialReports) {
-      const { id, ...rest } = item
-      await addDoc(collection(db, 'manufacturing_reports'), {
-        ...rest,
-        code: id,
-        createdAtTimestamp: serverTimestamp(),
-      })
-    }
-  } catch (e) {
-    console.error('Lỗi khi nạp dữ liệu mẫu vào Firestore:', e)
-  }
+  // Hoàn toàn vô hiệu hoá tự động nạp lại mẫu khi xoá hết
+  return
 }
 
 const severityClass = (severity) => `severity-${severity}`
@@ -281,16 +289,83 @@ const stats = computed(() => ({
   critical: reports.value.filter((r) => r.severity === 'critical' || parseFloat(r.defectRate) >= 10).length,
 }))
 
+// Thống kê số lượng theo 4 công đoạn chính: SMT, AI, DIP, AVR
+const processStats = computed(() => {
+  const all = reports.value || []
+  const total = all.length
+  const countFor = (name) =>
+    all.filter((r) => r.process && r.process.toString().trim().toUpperCase() === name.toUpperCase()).length
+
+  const smt = countFor('SMT')
+  const ai = countFor('AI')
+  const dip = countFor('DIP')
+  const avr = countFor('AVR')
+
+  return {
+    total,
+    smt,
+    ai,
+    dip,
+    avr,
+    smtPercent: total ? Math.round((smt / total) * 100) : 0,
+    aiPercent: total ? Math.round((ai / total) * 100) : 0,
+    dipPercent: total ? Math.round((dip / total) * 100) : 0,
+    avrPercent: total ? Math.round((avr / total) * 100) : 0,
+  }
+})
+
 export const commonProcesses = [
   'SMT',
-  'Đúc ép nhựa',
-  'Lắp ráp',
-  'Hàn bo mạch',
-  'Gia công CNC',
-  'Sơn bề mặt',
-  'Kiểm tra FQC',
-  'Đóng gói',
+  'AI',
+  'DIP',
+  'AVR',
 ]
+
+export function normalizeToDateString(val) {
+  if (!val) return ''
+  if (val.toDate && typeof val.toDate === 'function') {
+    return val.toDate().toISOString().split('T')[0]
+  }
+  const str = String(val).trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str.slice(0, 10)
+  }
+  const parts = str.split(/[\/\-]/)
+  if (parts.length === 3 && parts[2].length === 4) {
+    const day = parts[0].padStart(2, '0')
+    const month = parts[1].padStart(2, '0')
+    const year = parts[2]
+    return `${year}-${month}-${day}`
+  }
+  const d = new Date(str)
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0]
+  }
+  return ''
+}
+
+// Trích xuất danh sách tất cả ảnh của báo cáo một cách an toàn và tương thích ngược
+export function getReportImages(report) {
+  if (!report) return []
+  if (Array.isArray(report.images) && report.images.length > 0) {
+    return report.images
+      .map((img, idx) => {
+        if (typeof img === 'string') {
+          return { url: img, path: '', name: `Ảnh ${idx + 1}` }
+        }
+        return {
+          url: img.url || '',
+          path: img.path || '',
+          name: img.name || `Ảnh ${idx + 1}`,
+        }
+      })
+      .filter((img) => Boolean(img.url))
+  }
+  if (report.imageUrl) {
+    return [{ url: report.imageUrl, path: report.imagePath || '', name: 'Ảnh đính kèm' }]
+  }
+  return []
+}
 
 export function useReports() {
   const { user } = useAuth()
@@ -300,6 +375,7 @@ export function useReports() {
   const statusFilter = ref('all')
   const severityFilter = ref('all')
   const processFilter = ref('all')
+  const dateRange = ref(null)
   const activeStat = ref('all')
   const currentPage = ref(1)
   const pageSize = 8
@@ -309,9 +385,45 @@ export function useReports() {
   const editingId = ref(null)
   const isSaving = ref(false)
 
+  const showDeleteModal = ref(false)
+  const reportToDelete = ref(null)
+  const isDeleting = ref(false)
+
   const isDetailOpen = ref(false)
   const selectedReport = ref(null)
 
+  // Quản lý nhiều ảnh: Ảnh đã có sẵn từ trước + Ảnh mới chọn chờ upload
+  const existingImages = ref([]) // [{ url, path, name }]
+  const selectedFiles = ref([]) // [{ file, originalFile, previewUrl, name, originalSize, compressedSize, savings, isCompressing, id }]
+  const totalImagesCount = computed(() => existingImages.value.length + selectedFiles.value.length)
+
+  // Thống kê nén ảnh tự động cho các ảnh mới chọn
+  const compressionSummary = computed(() => {
+    if (selectedFiles.value.length === 0) return null
+    let totalOrig = 0
+    let totalComp = 0
+    let isCompressingAny = false
+    for (const item of selectedFiles.value) {
+      totalOrig += item.originalSize || 0
+      totalComp += item.compressedSize || 0
+      if (item.isCompressing) isCompressingAny = true
+    }
+    const saved = Math.max(0, totalOrig - totalComp)
+    const ratio = totalOrig > 0 ? Math.round((saved / totalOrig) * 100) : 0
+    return {
+      count: selectedFiles.value.length,
+      totalOrig,
+      totalComp,
+      saved,
+      ratio,
+      isCompressingAny,
+      formattedOrig: formatFileSize(totalOrig),
+      formattedComp: formatFileSize(totalComp),
+      formattedSaved: formatFileSize(saved),
+    }
+  })
+
+  // Backward compatibility refs
   const selectedImageFile = ref(null)
   const imagePreviewUrl = ref('')
 
@@ -319,7 +431,7 @@ export function useReports() {
     const today = new Date().toISOString().split('T')[0]
     return {
       date: today,
-      process: 'Lắp ráp',
+      process: 'SMT',
       productModel: '',
       machine: '',
       quantity: 1000,
@@ -332,6 +444,7 @@ export function useReports() {
       creator: user.value ? (user.value.displayName || user.value.email) : 'Admin',
       status: 'open',
       severity: 'low',
+      images: [],
       imageUrl: '',
       imagePath: '',
     }
@@ -389,7 +502,17 @@ export function useReports() {
         matchesProcess = report.process === processFilter.value
       }
 
-      return matchesSearch && matchesStat && matchesStatus && matchesSeverity && matchesProcess
+      let matchesDate = true
+      if (dateRange.value && Array.isArray(dateRange.value) && dateRange.value.length === 2 && dateRange.value[0] && dateRange.value[1]) {
+        const reportDateStr = normalizeToDateString(report.date || report.createdAt)
+        if (reportDateStr) {
+          matchesDate = reportDateStr >= dateRange.value[0] && reportDateStr <= dateRange.value[1]
+        } else {
+          matchesDate = false
+        }
+      }
+
+      return matchesSearch && matchesStat && matchesStatus && matchesSeverity && matchesProcess && matchesDate
     })
   )
 
@@ -406,32 +529,114 @@ export function useReports() {
     currentPage.value = 1
   }
 
+  function toggleProcessFilter(proc) {
+    if (processFilter.value === proc) {
+      processFilter.value = 'all'
+    } else {
+      processFilter.value = proc
+    }
+    currentPage.value = 1
+  }
+
   function resetFilters() {
     searchText.value = ''
     statusFilter.value = 'all'
     severityFilter.value = 'all'
     processFilter.value = 'all'
+    dateRange.value = null
     activeStat.value = 'all'
     currentPage.value = 1
   }
 
-  function handleImageSelected(file) {
-    if (!file) return
-    selectedImageFile.value = file
-    imagePreviewUrl.value = URL.createObjectURL(file)
+  function handleImagesSelected(files) {
+    if (!files) return
+    const fileList = Array.from(files).filter((f) => f && f.type && f.type.startsWith('image/'))
+    if (fileList.length === 0) {
+      message.warning('Vui lòng chọn các tệp hình ảnh hợp lệ (JPG, PNG, WEBP)')
+      return
+    }
+    for (const file of fileList) {
+      const fileId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      const previewUrl = URL.createObjectURL(file)
+      const itemObj = reactive({
+        file,
+        originalFile: file,
+        previewUrl,
+        name: file.name,
+        originalSize: file.size,
+        compressedSize: file.size,
+        compressedBase64: '',
+        savings: 0,
+        isCompressing: true,
+        id: fileId,
+      })
+      selectedFiles.value.push(itemObj)
+
+      // Kích hoạt nén ảnh client-side tự động ngay khi người dùng chọn
+      compressImage(file, 1280, 1280, 0.78)
+        .then((res) => {
+          itemObj.file = res.file
+          itemObj.compressedSize = res.compressedSize
+          itemObj.compressedBase64 = res.base64
+          itemObj.savings = Math.max(0, Math.round((1 - res.compressedSize / res.originalSize) * 100))
+          itemObj.isCompressing = false
+        })
+        .catch((err) => {
+          console.warn('Lỗi nén ảnh:', err)
+          itemObj.isCompressing = false
+        })
+    }
+    if (selectedFiles.value.length > 0) {
+      selectedImageFile.value = selectedFiles.value[0].file
+      imagePreviewUrl.value = selectedFiles.value[0].previewUrl
+    }
   }
 
-  function removeAttachedImage() {
+  function handleImageSelected(file) {
+    if (file) handleImagesSelected([file])
+  }
+
+  function removeExistingImage(index) {
+    existingImages.value.splice(index, 1)
+  }
+
+  function removeSelectedFile(index) {
+    const item = selectedFiles.value[index]
+    if (item && item.previewUrl && item.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(item.previewUrl)
+    }
+    selectedFiles.value.splice(index, 1)
+    if (selectedFiles.value.length > 0) {
+      selectedImageFile.value = selectedFiles.value[0].file
+      imagePreviewUrl.value = selectedFiles.value[0].previewUrl
+    } else {
+      selectedImageFile.value = null
+      imagePreviewUrl.value = ''
+    }
+  }
+
+  function clearAllImages() {
+    for (const item of selectedFiles.value) {
+      if (item.previewUrl && item.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(item.previewUrl)
+      }
+    }
+    selectedFiles.value = []
+    existingImages.value = []
     selectedImageFile.value = null
     imagePreviewUrl.value = ''
+    form.images = []
     form.imageUrl = ''
     form.imagePath = ''
   }
 
+  function removeAttachedImage() {
+    clearAllImages()
+  }
+
   function openCreate() {
     Object.assign(form, emptyForm())
-    selectedImageFile.value = null
-    imagePreviewUrl.value = ''
+    clearAllImages()
     editingId.value = null
     isEditing.value = false
     isModalOpen.value = true
@@ -442,6 +647,8 @@ export function useReports() {
       ...emptyForm(),
       ...report,
     })
+    existingImages.value = [...getReportImages(report)]
+    selectedFiles.value = []
     selectedImageFile.value = null
     imagePreviewUrl.value = report.imageUrl || ''
     editingId.value = report.id
@@ -471,26 +678,61 @@ export function useReports() {
     })
   }
 
-  async function uploadImageFile(file) {
-    if (!file) return { url: '', path: '' }
+  // Cờ báo hiệu cảnh báo về Storage để chỉ hiển thị 1 lần cho người dùng
+  let storageWarningShown = false
+  let isStorageAvailable = true
 
-    if (isFirebaseConfigured && storage) {
+  async function uploadImageFile(itemOrFile) {
+    if (!itemOrFile) return { url: '', path: '' }
+
+    let file = itemOrFile.file || itemOrFile
+    let compressedBase64 = itemOrFile.compressedBase64 || ''
+    const fileName = itemOrFile.name || file.name || 'image.jpg'
+
+    // Nếu chưa có kết quả nén (hoặc truyền raw file đơn lẻ), nén ngay
+    if (!compressedBase64) {
       try {
-        const filePath = `reports/${Date.now()}_${file.name.replace(/\s+/g, '_')}`
+        const compressed = await compressImage(file, 1280, 1280, 0.78)
+        file = compressed.file
+        compressedBase64 = compressed.base64
+      } catch (compressErr) {
+        console.warn('Không thể nén ảnh trước khi tải lên, dùng ảnh gốc:', compressErr)
+      }
+    }
+
+    // 2. Chế độ Miễn phí 100% (Gói Spark): Lưu ảnh nén trực tiếp vào Firestore mà không cần Firebase Storage
+    // Bỏ qua hoàn toàn việc gọi Storage để tránh phát sinh lỗi 404 / CORS và thời gian chờ
+    if (!isStorageEnabled) {
+      const base64 = compressedBase64 || (await fileToBase64(file))
+      return { url: base64, path: '' }
+    }
+
+    // 3. Chỉ tải lên Firebase Storage khi được bật (khi đã nâng cấp gói Blaze)
+    if (isFirebaseConfigured && storage && isStorageAvailable) {
+      try {
+        const safeName = fileName
+          ? fileName
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-zA-Z0-9._-]/g, '_')
+          : 'image.jpg'
+        const filePath = `reports/${Date.now()}_${safeName}`
         const fileRef = storageRef(storage, filePath)
         const snapshot = await uploadBytes(fileRef, file)
         const downloadUrl = await getDownloadURL(snapshot.ref)
         return { url: downloadUrl, path: filePath }
       } catch (err) {
-        console.warn('Upload Firebase Storage thất bại, fallback Base64:', err)
+        console.warn('Upload Firebase Storage thất bại, tự động fallback Base64 đã nén:', err)
+        isStorageAvailable = false
       }
     }
 
+    // Fallback an toàn: Dùng chuỗi Base64 đã được nén tối ưu (< 200KB)
     try {
-      const base64 = await fileToBase64(file)
+      const base64 = compressedBase64 || (await fileToBase64(file))
       return { url: base64, path: '' }
     } catch (e) {
-      console.error('Lỗi chuyển ảnh:', e)
+      console.error('Lỗi chuyển ảnh sang Base64:', e)
       return { url: '', path: '' }
     }
   }
@@ -516,41 +758,46 @@ export function useReports() {
   }
 
   async function saveReport() {
-    if (!form.productModel || !form.machine || !form.defectDescription) {
-      alert('Vui lòng nhập Product model, Machine và Defect description!')
-      return
-    }
     isSaving.value = true
 
     try {
-      let finalImageUrl = form.imageUrl
-      let finalImagePath = form.imagePath
-
-      if (selectedImageFile.value) {
-        const uploadRes = await uploadImageFile(selectedImageFile.value)
-        finalImageUrl = uploadRes.url
-        finalImagePath = uploadRes.path
+      // Tải lên tất cả các ảnh mới chọn lên Firebase Storage (sử dụng ảnh đã nén sẵn)
+      const uploadedImages = []
+      for (const item of selectedFiles.value) {
+        const uploadRes = await uploadImageFile(item)
+        if (uploadRes.url) {
+          uploadedImages.push({
+            url: uploadRes.url,
+            path: uploadRes.path,
+            name: item.name,
+          })
+        }
       }
+
+      const finalImages = [...existingImages.value, ...uploadedImages]
+      const primaryUrl = finalImages.length > 0 ? finalImages[0].url : ''
+      const primaryPath = finalImages.length > 0 ? finalImages[0].path : ''
 
       const calculatedRate = calculateDefectRate(form.defectQuantity, form.quantity)
 
       const reportPayload = {
         date: form.date || new Date().toISOString().split('T')[0],
-        process: form.process || 'Lắp ráp',
-        productModel: form.productModel.trim(),
-        machine: form.machine.trim(),
+        process: form.process || 'SMT',
+        productModel: form.productModel ? form.productModel.trim() : 'MDL-GEN',
+        machine: form.machine ? form.machine.trim() : 'LINE-01',
         quantity: Number(form.quantity) || 0,
         defectQuantity: Number(form.defectQuantity) || 0,
         defectRate: calculatedRate,
-        responsiblePerson: form.responsiblePerson || 'Quản lý chuyền',
-        assignee: form.assignee || (user.value ? user.value.displayName : 'QA Engineer'),
-        defectDescription: form.defectDescription.trim(),
+        responsiblePerson: form.responsiblePerson ? form.responsiblePerson.trim() : 'Quản lý chuyền',
+        assignee: form.assignee ? form.assignee.trim() : (user.value ? user.value.displayName : 'QA Engineer'),
+        defectDescription: form.defectDescription ? form.defectDescription.trim() : 'Chưa có mô tả chi tiết',
         progressNote: form.progressNote ? form.progressNote.trim() : '',
         creator: form.creator || (user.value ? (user.value.displayName || user.value.email) : 'Admin'),
         status: form.status || 'open',
         severity: form.severity || 'low',
-        imageUrl: finalImageUrl || '',
-        imagePath: finalImagePath || '',
+        images: finalImages,
+        imageUrl: primaryUrl,
+        imagePath: primaryPath,
         createdAt: form.createdAt || new Date().toLocaleDateString('vi-VN'),
       }
 
@@ -571,6 +818,7 @@ export function useReports() {
           }
           saveLocalReports(reports.value)
         }
+        message.success(t('updateSuccess'))
       } else {
         let newDocId = `ANOM-${Date.now().toString().slice(-4)}`
 
@@ -589,31 +837,47 @@ export function useReports() {
 
         reports.value.unshift(newReport)
         saveLocalReports(reports.value)
+        message.success(t('createSuccess'))
       }
 
       isModalOpen.value = false
     } catch (err) {
       console.error('Lỗi khi lưu báo cáo:', err)
-      alert('Không thể lưu báo cáo: ' + (err.message || 'Lỗi không xác định'))
+      message.error('Không thể lưu báo cáo: ' + (err.message || 'Lỗi không xác định'))
     } finally {
       isSaving.value = false
     }
   }
 
-  async function removeReport(report) {
-    if (!window.confirm(`${t('confirmDelete')} [${report.id}] "${report.productModel} - ${report.process}"?`)) {
-      return
-    }
+  function promptDelete(report) {
+    reportToDelete.value = report
+    showDeleteModal.value = true
+  }
 
+  function cancelDelete() {
+    showDeleteModal.value = false
+    reportToDelete.value = null
+  }
+
+  async function executeDelete() {
+    const report = reportToDelete.value
+    if (!report) return
+
+    isDeleting.value = true
     try {
       if (isFirebaseConfigured && db) {
         await deleteDoc(doc(db, 'manufacturing_reports', report.id))
 
-        if (report.imagePath && storage) {
-          try {
-            await deleteObject(storageRef(storage, report.imagePath))
-          } catch (e) {
-            console.warn('Không thể xoá ảnh trên Storage:', e)
+        if (storage && isStorageEnabled) {
+          const imagesToDelete = getReportImages(report)
+          for (const img of imagesToDelete) {
+            if (img.path) {
+              try {
+                await deleteObject(storageRef(storage, img.path))
+              } catch (e) {
+                console.warn('Không thể xoá ảnh trên Storage:', e)
+              }
+            }
           }
         }
       }
@@ -623,11 +887,22 @@ export function useReports() {
 
       if (selectedReport.value && selectedReport.value.id === report.id) {
         isDetailOpen.value = false
+        selectedReport.value = null
       }
+
+      message.success(t('deleteSuccess'))
+      showDeleteModal.value = false
+      reportToDelete.value = null
     } catch (err) {
       console.error('Lỗi xoá báo cáo:', err)
-      alert('Không thể xoá báo cáo: ' + (err.message || 'Lỗi không xác định'))
+      message.error(t('deleteError') + (err.message || 'Lỗi không xác định'))
+    } finally {
+      isDeleting.value = false
     }
+  }
+
+  function removeReport(report) {
+    promptDelete(report)
   }
 
   function changePage(page) {
@@ -641,6 +916,7 @@ export function useReports() {
     statusFilter,
     severityFilter,
     processFilter,
+    dateRange,
     activeStat,
     currentPage,
     pageSize,
@@ -648,9 +924,24 @@ export function useReports() {
     isEditing,
     editingId,
     isSaving,
+    showDeleteModal,
+    reportToDelete,
+    isDeleting,
+    promptDelete,
+    cancelDelete,
+    executeDelete,
     isDetailOpen,
     selectedReport,
     form,
+    existingImages,
+    selectedFiles,
+    totalImagesCount,
+    compressionSummary,
+    handleImagesSelected,
+    removeExistingImage,
+    removeSelectedFile,
+    clearAllImages,
+    getReportImages,
     selectedImageFile,
     imagePreviewUrl,
     handleImageSelected,
@@ -659,6 +950,8 @@ export function useReports() {
     filteredReports,
     pagedReports,
     stats,
+    processStats,
+    toggleProcessFilter,
     t,
     severityLabels,
     statusLabels,
