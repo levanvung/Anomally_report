@@ -227,9 +227,10 @@ a:hover {
   background: var(--bg-glass-hover) !important;
 }
 
-/* Ant Input dark */
+/* Ant Input & Input Number dark */
 .ant-input,
-.ant-input-affix-wrapper {
+.ant-input-affix-wrapper,
+.ant-input-number {
   background: var(--bg-surface) !important;
   border-color: var(--border-default) !important;
   color: var(--text-primary) !important;
@@ -237,7 +238,28 @@ a:hover {
   border-radius: var(--radius-md) !important;
 }
 
-.ant-input::placeholder {
+.ant-input-number-input {
+  color: var(--text-primary) !important;
+  background: transparent !important;
+  font-size: 13px !important;
+}
+
+.ant-input-number-handler-wrap {
+  background: var(--bg-surface) !important;
+  border-left: 1px solid var(--border-default) !important;
+}
+
+.ant-input-number-handler {
+  border-color: var(--border-default) !important;
+}
+
+.ant-input-number-handler-up-inner,
+.ant-input-number-handler-down-inner {
+  color: var(--text-tertiary) !important;
+}
+
+.ant-input::placeholder,
+.ant-input-number-input::placeholder {
   color: var(--text-muted) !important;
 }
 
@@ -248,7 +270,9 @@ a:hover {
 
 .ant-input-affix-wrapper:hover,
 .ant-input-affix-wrapper-focused,
-.ant-input:focus {
+.ant-input:focus,
+.ant-input-number:hover,
+.ant-input-number-focused {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 2px var(--accent-glow) !important;
 }

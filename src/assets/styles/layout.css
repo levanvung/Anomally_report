@@ -4,6 +4,7 @@
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  position: relative;
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, var(--accent-bg), transparent),
     linear-gradient(180deg, var(--bg-deepest) 0%, var(--bg-deep) 100%);
@@ -11,6 +12,240 @@
   flex-direction: column;
   color: var(--text-primary);
   transition: background var(--duration-normal) var(--ease-out);
+}
+
+/* ─── App Shell Ambient Dynamic Background (Hoạt ảnh động nền đỉnh cao 60fps) ─── */
+.app-ambient-backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* 4 Glowing Nebula Orbs */
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Orb 1: Cyan / Electric Blue (Top Left - Center) */
+.ambient-orb-cyan {
+  width: 620px;
+  height: 620px;
+  top: -140px;
+  left: 8%;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.22) 0%, rgba(2, 132, 199, 0.08) 50%, transparent 70%);
+  animation: ambient-drift-1 26s ease-in-out infinite alternate;
+}
+
+/* Orb 2: Indigo / Royal Violet (Top Right) */
+.ambient-orb-indigo {
+  width: 680px;
+  height: 680px;
+  top: 6%;
+  right: -120px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, rgba(139, 92, 246, 0.07) 50%, transparent 70%);
+  animation: ambient-drift-2 32s ease-in-out infinite alternate;
+}
+
+/* Orb 3: Emerald / Mint Safety Teal (Bottom Left - Center) */
+.ambient-orb-emerald {
+  width: 550px;
+  height: 550px;
+  bottom: -100px;
+  left: 18%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.16) 0%, rgba(20, 184, 166, 0.05) 50%, transparent 70%);
+  animation: ambient-drift-3 28s ease-in-out infinite alternate;
+}
+
+/* Orb 4: Amber / Warm Gold (Bottom Right) */
+.ambient-orb-amber {
+  width: 500px;
+  height: 500px;
+  bottom: 12%;
+  right: 12%;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.13) 0%, rgba(217, 119, 6, 0.04) 50%, transparent 70%);
+  animation: ambient-drift-4 22s ease-in-out infinite alternate;
+}
+
+/* Keyframe animations for fluid, organic orb movements */
+@keyframes ambient-drift-1 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(120px, 80px, 0) scale(1.18) rotate(45deg);
+  }
+  66% {
+    transform: translate3d(60px, 160px, 0) scale(0.92) rotate(90deg);
+  }
+  100% {
+    transform: translate3d(-50px, 90px, 0) scale(1.08) rotate(135deg);
+  }
+}
+
+@keyframes ambient-drift-2 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(-140px, 70px, 0) scale(1.15) rotate(-40deg);
+  }
+  66% {
+    transform: translate3d(-80px, 150px, 0) scale(0.88) rotate(-85deg);
+  }
+  100% {
+    transform: translate3d(40px, -60px, 0) scale(1.12) rotate(-120deg);
+  }
+}
+
+@keyframes ambient-drift-3 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-90px, -110px, 0) scale(1.22);
+  }
+  100% {
+    transform: translate3d(110px, -60px, 0) scale(0.85);
+  }
+}
+
+@keyframes ambient-drift-4 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.9);
+  }
+  50% {
+    transform: translate3d(80px, -100px, 0) scale(1.25);
+  }
+  100% {
+    transform: translate3d(-70px, 60px, 0) scale(1);
+  }
+}
+
+/* Cyber Matrix Mesh Grid */
+.ambient-mesh-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.065) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.6;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, rgba(0, 0, 0, 1) 30%, rgba(0, 0, 0, 0) 90%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, rgba(0, 0, 0, 1) 30%, rgba(0, 0, 0, 0) 90%);
+}
+
+/* Sentinel Radar Holographic Scan Sweep */
+.ambient-radar-sweep {
+  position: absolute;
+  top: -30%;
+  left: -20%;
+  width: 140%;
+  height: 280px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(14, 165, 233, 0.02) 40%,
+    rgba(56, 189, 248, 0.07) 50%,
+    rgba(14, 165, 233, 0.02) 60%,
+    transparent 100%
+  );
+  filter: blur(16px);
+  opacity: 0.7;
+  transform: rotate(-14deg);
+  animation: ambient-radar-scan 18s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes ambient-radar-scan {
+  0% {
+    transform: translateY(-40vh) rotate(-14deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.75;
+  }
+  88% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateY(140vh) rotate(-14deg);
+    opacity: 0;
+  }
+}
+
+/* Floating Quantum Stardust Particles */
+.ambient-stardust-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ambient-stardust {
+  position: absolute;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.9), 0 0 12px rgba(14, 165, 233, 0.4);
+  animation: ambient-stardust-drift linear infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes ambient-stardust-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.6);
+    opacity: 0.1;
+  }
+  25% {
+    opacity: 0.85;
+    transform: translate3d(14px, -35px, 0) scale(1.1);
+  }
+  50% {
+    transform: translate3d(-10px, -75px, 0) scale(0.85);
+    opacity: 0.45;
+  }
+  75% {
+    opacity: 0.9;
+    transform: translate3d(16px, -115px, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(0, -160px, 0) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* Light Theme Adaptations */
+[data-theme="light"] .app-ambient-backdrop {
+  background: radial-gradient(circle at 50% 0%, rgba(224, 242, 254, 0.5) 0%, rgba(248, 250, 252, 0.2) 100%);
+}
+
+[data-theme="light"] .ambient-orb-cyan {
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, rgba(186, 230, 253, 0.08) 60%, transparent 75%);
+}
+
+[data-theme="light"] .ambient-orb-indigo {
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.14) 0%, rgba(224, 231, 255, 0.06) 60%, transparent 75%);
+}
+
+[data-theme="light"] .ambient-orb-emerald {
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.13) 0%, rgba(209, 250, 229, 0.05) 60%, transparent 75%);
+}
+
+[data-theme="light"] .ambient-orb-amber {
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.12) 0%, rgba(254, 243, 199, 0.04) 60%, transparent 75%);
+}
+
+[data-theme="light"] .ambient-mesh-grid {
+  background-image: radial-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+  opacity: 0.4;
+}
+
+[data-theme="light"] .ambient-stardust {
+  background: #0284c7;
+  box-shadow: 0 0 5px rgba(2, 132, 199, 0.6);
 }
 
 /* ─── Topbar / Header ─── */
@@ -271,6 +506,8 @@
 
 /* ─── Content Area ─── */
 .content {
+  position: relative;
+  z-index: 1;
   padding: 32px 40px 60px;
   max-width: 1520px;
   width: 100%;
@@ -282,6 +519,8 @@
 
 /* ─── Professional Enterprise Footer ─── */
 .app-footer {
+  position: relative;
+  z-index: 2;
   width: 100%;
   border-top: 1px solid var(--border-default);
   background: var(--bg-card);

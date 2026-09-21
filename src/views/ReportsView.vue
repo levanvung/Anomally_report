@@ -107,9 +107,9 @@ const drawerWidth = computed(() => {
     return '100%'
   }
   if (windowWidth.value <= 1200) {
-    return '540px'
+    return '640px'
   }
-  return '620px'
+  return '720px'
 })
 </script>
 
@@ -800,22 +800,7 @@ const drawerWidth = computed(() => {
       class="report-drawer"
       :mask-closable="true"
     >
-      <template #extra>
-        <div class="drawer-header-actions desktop-only-actions">
-          <a-button @click="isModalOpen = false">
-            {{ t('btnCancel') }}
-          </a-button>
-          <a-button
-            type="primary"
-            style="color:white"
-            :loading="isSaving"
-            :disabled="!form.productModel || !form.machine || !form.defectDescription"
-            @click="saveReport"
-          >
-            {{ isSaving ? 'Đang lưu...' : t('btnSave') }}
-          </a-button>
-        </div>  
-      </template>
+
 
       <a-form layout="vertical" class="report-form">
         <!-- Nhóm 1: Ngày, Công đoạn, Model & Máy -->
