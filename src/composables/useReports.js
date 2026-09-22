@@ -382,6 +382,23 @@ export function getReportImages(report) {
   return []
 }
 
+export function getPrimaryReportImage(report) {
+  if (!report) return ''
+  if (Array.isArray(report.images) && report.images.length > 0) {
+    const firstImage = report.images[0]
+    return typeof firstImage === 'string' ? firstImage : (firstImage?.url || '')
+  }
+  return report.imageUrl || ''
+}
+
+export function getReportImageCount(report) {
+  if (!report) return 0
+  if (Array.isArray(report.images) && report.images.length > 0) {
+    return report.images.filter((image) => typeof image === 'string' ? Boolean(image) : Boolean(image?.url)).length
+  }
+  return report.imageUrl ? 1 : 0
+}
+
 export function useReports() {
   const { user } = useAuth()
   const { t, severityLabels, statusLabels, categoryOptions } = useI18n()

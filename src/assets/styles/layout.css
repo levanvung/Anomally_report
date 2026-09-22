@@ -29,9 +29,26 @@
 .ambient-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(100px);
-  will-change: transform, opacity;
-  transform: translateZ(0);
+  filter: blur(48px);
+  opacity: 0.7;
+}
+
+/* Keep the atmosphere static so large blurred layers do not monopolize the GPU. */
+.ambient-orb,
+.ambient-radar-sweep,
+.ambient-stardust {
+  animation: none;
+}
+
+.ambient-radar-sweep,
+.ambient-stardust-field {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .ambient-orb {
+    filter: blur(48px);
+  }
 }
 
 /* Orb 1: Cyan / Electric Blue (Top Left - Center) */

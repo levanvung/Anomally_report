@@ -1,6 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useReports, getDefectRateLevel, commonProcesses, formatFileSize } from '../composables/useReports'
+import {
+  useReports,
+  getDefectRateLevel,
+  getPrimaryReportImage,
+  getReportImageCount,
+  commonProcesses,
+  formatFileSize,
+} from '../composables/useReports'
 import {
   CheckCircleFilled,
   DeleteOutlined,
@@ -198,6 +205,8 @@ const drawerWidth = computed(() => {
   }
   return '720px'
 })
+
+const isMobileLayout = computed(() => windowWidth.value < 768)
 </script>
 
 <template>
@@ -391,7 +400,7 @@ const drawerWidth = computed(() => {
     </div>
 
     <!-- Data Table (15 Cột Chuẩn Hoá - Hiển thị trên Desktop / Tablet >= 768px) -->
-    <div class="table-wrap desktop-only animate-in stagger-6">
+    <div v-if="!isMobileLayout" class="table-wrap desktop-only animate-in stagger-6">
       <!-- Table Header Bar với nút tạo báo cáo bên phải -->
       <div class="table-header-bar">
         <div class="table-header-left">
@@ -522,24 +531,17 @@ const drawerWidth = computed(() => {
         <a-table-column :title="t('colDefectImage')" key="imageUrl" :width="110" align="center">
           <template #default="{ record }">
             <div class="table-img-cell">
-              <div v-if="getReportImages(record).length > 0" class="table-image-thumb-box" :title="t('viewFullImage')">
-                <a-image-preview-group>
-                  <a-image
-                    :src="getReportImages(record)[0].url"
-                    :alt="record.productModel"
-                    class="table-image-thumb"
-                  />
-                  <!-- Hidden extra images for lightbox paging -->
-                  <div style="display: none;">
-                    <a-image
-                      v-for="(img, idx) in getReportImages(record).slice(1)"
-                      :key="idx"
-                      :src="img.url"
-                    />
-                  </div>
-                </a-image-preview-group>
-                <span v-if="getReportImages(record).length > 1" class="multi-img-count-badge">
-                  +{{ getReportImages(record).length - 1 }}
+              <div v-if="getReportImageCount(record) > 0" class="table-image-thumb-box" :title="t('viewFullImage')">
+                <img
+                  :src="getPrimaryReportImage(record)"
+                  :alt="record.productModel"
+                  class="table-image-thumb"
+                  loading="lazy"
+                  decoding="async"
+                  @click="openDetail(record)"
+                />
+                <span v-if="getReportImageCount(record) > 1" class="multi-img-count-badge">
+                  +{{ getReportImageCount(record) - 1 }}
                 </span>
               </div>
               <div v-else class="table-no-img" :title="t('noImage')">
@@ -637,7 +639,7 @@ const drawerWidth = computed(() => {
     </div>
 
     <!-- Mobile Card View (Tối ưu 15 trường cho Mobile < 768px) -->
-    <div class="mobile-cards-wrap mobile-only animate-in stagger-6">
+    <div v-else class="mobile-cards-wrap mobile-only animate-in stagger-6">
       <div class="mobile-header-bar">
         <div class="mobile-header-left">
           <span class="mobile-header-title">{{ t('title') }}</span>
@@ -718,24 +720,18 @@ const drawerWidth = computed(() => {
           </div>
 
           <!-- Defect Photo Banner (Hiển thị to rõ trên Mobile khi có ảnh) -->
-          <div v-if="getReportImages(record).length > 0" class="mobile-card-photo-banner">
-            <a-image-preview-group>
-              <a-image
-                :src="getReportImages(record)[0].url"
-                :alt="record.productModel"
-                class="mobile-card-banner-img"
-              />
-              <div style="display: none;">
-                <a-image
-                  v-for="(img, idx) in getReportImages(record).slice(1)"
-                  :key="idx"
-                  :src="img.url"
-                />
-              </div>
-            </a-image-preview-group>
+          <div v-if="getReportImageCount(record) > 0" class="mobile-card-photo-banner">
+            <img
+              :src="getPrimaryReportImage(record)"
+              :alt="record.productModel"
+              class="mobile-card-banner-img"
+              loading="lazy"
+              decoding="async"
+              @click="openDetail(record)"
+            />
             <div class="mobile-photo-tag">
               <PictureOutlined />
-              <span>{{ getReportImages(record).length > 1 ? `${getReportImages(record).length} ảnh lỗi` : t('colDefectImage') }}</span>
+              <span>{{ getReportImageCount(record) > 1 ? `${getReportImageCount(record)} ảnh lỗi` : t('colDefectImage') }}</span>
             </div>
             <div class="mobile-photo-zoom-badge">
               <span>🔍 Phóng to & xem toàn bộ ảnh</span>
