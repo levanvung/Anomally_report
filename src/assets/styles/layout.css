@@ -40,6 +40,11 @@
   animation: none;
 }
 
+/* Keep the large blurred layers static; animating them causes frequent GPU repaints. */
+.ambient-orb {
+  animation: none !important;
+}
+
 .ambient-radar-sweep,
 .ambient-stardust-field {
   display: none;

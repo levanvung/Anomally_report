@@ -32,6 +32,7 @@ const {
 
 const canvasRef = ref(null)
 let animId = null
+let cleanupCanvas = null
 
 const langOptions = [
   { value: 'vi', label: '🇻🇳 Tiếng Việt' },
@@ -77,6 +78,9 @@ onMounted(() => {
   if (!canvas) return
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (prefersReducedMotion) return
 
   let width = (canvas.width = window.innerWidth)
   let height = (canvas.height = window.innerHeight)
@@ -133,7 +137,7 @@ onMounted(() => {
   ]
 
   // Micro floating stardust particles
-  const particleCount = Math.min(55, Math.floor((width * height) / 22000))
+  const particleCount = Math.min(36, Math.floor((width * height) / 32000))
   const particles = Array.from({ length: particleCount }, () => ({
     x: Math.random() * width,
     y: Math.random() * height,
@@ -154,7 +158,17 @@ onMounted(() => {
   }
   window.addEventListener('mousemove', onMouseMove)
 
-  function animate() {
+  let lastFrameAt = 0
+  function animate(timestamp) {
+    if (document.hidden) {
+      animId = null
+      return
+    }
+    if (timestamp - lastFrameAt < 33) {
+      animId = requestAnimationFrame(animate)
+      return
+    }
+    lastFrameAt = timestamp
     ctx.clearRect(0, 0, width, height)
 
     // Fluid moving blurry blobs
@@ -212,15 +226,11 @@ onMounted(() => {
       if (p.x < -15) p.x = width + 15
       if (p.x > width + 15) p.x = -15
 
-      ctx.save()
       ctx.globalAlpha = Math.max(0.1, Math.min(1, p.opacity))
       ctx.fillStyle = p.color
-      ctx.shadowBlur = 10
-      ctx.shadowColor = p.color
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2)
       ctx.fill()
-      ctx.restore()
     }
 
     animId = requestAnimationFrame(animate)
@@ -228,11 +238,25 @@ onMounted(() => {
 
   animId = requestAnimationFrame(animate)
 
-  onUnmounted(() => {
+  const onVisibilityChange = () => {
+    if (!document.hidden && !animId) {
+      lastFrameAt = 0
+      animId = requestAnimationFrame(animate)
+    }
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange)
+
+  cleanupCanvas = () => {
     window.removeEventListener('resize', onResize)
     window.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
     if (animId) cancelAnimationFrame(animId)
-  })
+    animId = null
+  }
+})
+
+onUnmounted(() => {
+  cleanupCanvas?.()
 })
 
 async function handleLogin() {
