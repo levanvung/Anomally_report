@@ -812,7 +812,7 @@ const drawerWidth = computed(() => {
     <!-- Modal Xem Chi Tiết 15 Thông Tin Báo Cáo -->
     <a-modal
       v-model:open="isDetailOpen"
-      width="780px"
+      width="860px"
       class="detail-modal"
       :footer="null"
       @cancel="closeDetail"
@@ -876,13 +876,16 @@ const drawerWidth = computed(() => {
           </div>
 
           <a-image-preview-group>
-            <!-- Nếu có 1 ảnh duy nhất: hiển thị lớn nổi bật -->
+            <!-- Nếu có 1 ảnh duy nhất: hiển thị lớn nổi bật & căn giữa chuẩn -->
             <div v-if="getReportImages(selectedReport).length === 1" class="detail-single-image-wrap">
               <a-image
                 :src="getReportImages(selectedReport)[0].url"
                 :alt="selectedReport.productModel"
                 class="detail-report-img"
               />
+              <div class="image-zoom-indicator">
+                <EyeOutlined /> Nhấp để xem kích thước gốc
+              </div>
             </div>
 
             <!-- Nếu có nhiều ảnh: hiển thị lưới Gallery ảnh hiện đại -->
