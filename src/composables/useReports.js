@@ -296,50 +296,29 @@ async function seedInitialFirestoreData() {
 const severityClass = (severity) => `severity-${severity}`
 const statusClass = (status) => `status-${status}`
 
-const stats = computed(() => ({
-  total: reports.value.length,
-  open: reports.value.filter((r) => r.status === 'open').length,
-  investigating: reports.value.filter((r) => r.status === 'investigating').length,
-  resolved: reports.value.filter((r) => ['resolved', 'closed'].includes(r.status)).length,
-  critical: reports.value.filter((r) => r.severity === 'critical' || parseFloat(r.defectRate) >= 10).length,
-}))
-
-// Thống kê số lượng theo 4 công đoạn chính: SMT, AI, DIP, AVR
-const processStats = computed(() => {
-  const all = reports.value || []
-  const total = all.length
-  const countFor = (name) =>
-    all.filter((r) => r.process && r.process.toString().trim().toUpperCase() === name.toUpperCase()).length
-
-  const smt = countFor('SMT')
-  const ai = countFor('AI')
-  const dip = countFor('DIP')
-  const avr = countFor('AVR')
-
-  return {
-    total,
-    smt,
-    ai,
-    dip,
-    avr,
-    smtPercent: total ? Math.round((smt / total) * 100) : 0,
-    aiPercent: total ? Math.round((ai / total) * 100) : 0,
-    dipPercent: total ? Math.round((dip / total) * 100) : 0,
-    avrPercent: total ? Math.round((avr / total) * 100) : 0,
-  }
-})
-
-export const commonProcesses = [
-  'SMT',
-  'AI',
-  'DIP',
-  'AVR',
-]
-
+// Helper chuẩn hoá chuỗi ngày tháng an toàn theo múi giờ địa phương (tránh lỗi lệch ngày UTC)
 export function normalizeToDateString(val) {
   if (!val) return ''
-  if (val.toDate && typeof val.toDate === 'function') {
-    return val.toDate().toISOString().split('T')[0]
+  // Hỗ trợ Dayjs hoặc Moment object
+  if (typeof val === 'object' && typeof val.format === 'function') {
+    return val.format('YYYY-MM-DD')
+  }
+  // Hỗ trợ Firestore Timestamp (có phương thức toDate)
+  if (typeof val === 'object' && typeof val.toDate === 'function') {
+    const d = val.toDate()
+    if (d instanceof Date && !isNaN(d.getTime())) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  // Hỗ trợ đối tượng Date chuẩn JavaScript
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const year = val.getFullYear()
+    const month = String(val.getMonth() + 1).padStart(2, '0')
+    const day = String(val.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
   }
   const str = String(val).trim()
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
@@ -354,10 +333,49 @@ export function normalizeToDateString(val) {
   }
   const d = new Date(str)
   if (!isNaN(d.getTime())) {
-    return d.toISOString().split('T')[0]
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
   }
   return ''
 }
+
+// Kiểm tra xem ngày của báo cáo có nằm trong khoảng ngày được lọc hay không
+export function isDateInRange(reportDateVal, range) {
+  if (!range) return true
+  let start = ''
+  let end = ''
+  if (Array.isArray(range)) {
+    if (range.length === 0) return true
+    if (range[0]) start = normalizeToDateString(range[0])
+    if (range[1]) end = normalizeToDateString(range[1])
+  } else if (typeof range === 'string' || (range && typeof range.format === 'function')) {
+    start = normalizeToDateString(range)
+    end = start
+  }
+
+  if (!start && !end) return true
+
+  const rDate = normalizeToDateString(reportDateVal)
+  if (!rDate) return false
+
+  if (start && end) {
+    const minD = start <= end ? start : end
+    const maxD = start <= end ? end : start
+    return rDate >= minD && rDate <= maxD
+  }
+  if (start) return rDate >= start
+  if (end) return rDate <= end
+  return true
+}
+
+export const commonProcesses = [
+  'SMT',
+  'AI',
+  'DIP',
+  'AVR',
+]
 
 // Trích xuất danh sách tất cả ảnh của báo cáo một cách an toàn và tương thích ngược
 export function getReportImages(report) {
@@ -493,8 +511,161 @@ export function useReports() {
     else form.severity = 'low'
   }
 
+  // Danh sách báo cáo đã được lọc theo khoảng ngày (hoặc tất cả nếu không chọn ngày)
+  const dateFilteredReports = computed(() => {
+    if (!dateRange.value) return reports.value || []
+    return (reports.value || []).filter((r) => isDateInRange(r.date || r.createdAt, dateRange.value))
+  })
+
+  // Thống kê theo trạng thái (Open, Investigating, Resolved, Critical) - tự động đồng bộ theo ngày lọc
+  const stats = computed(() => {
+    const list = dateFilteredReports.value
+    return {
+      total: list.length,
+      open: list.filter((r) => r.status === 'open').length,
+      investigating: list.filter((r) => r.status === 'investigating').length,
+      resolved: list.filter((r) => ['resolved', 'closed'].includes(r.status)).length,
+      critical: list.filter((r) => r.severity === 'critical' || parseFloat(r.defectRate) >= 10).length,
+    }
+  })
+
+  // Thống kê số lượng theo 4 công đoạn chính: SMT, AI, DIP, AVR
+  // Tự động đồng bộ theo khoảng ngày được lọc và tổng hợp cả Sản lượng (Quantity) & Số lỗi (Defect quantity)
+  const processStats = computed(() => {
+    const list = dateFilteredReports.value
+    const total = list.length
+
+    const getProcessData = (name) => {
+      const target = name.toUpperCase()
+      const matched = list.filter((r) => {
+        if (!r.process) return false
+        const proc = r.process.toString().trim().toUpperCase()
+        return proc === target || proc.startsWith(target + ' ') || proc.startsWith(target + '-')
+      })
+
+      const count = matched.length
+      const totalQty = matched.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)
+      const totalDefect = matched.reduce((sum, r) => sum + (Number(r.defectQuantity) || 0), 0)
+      const defectRate = totalQty > 0 ? ((totalDefect / totalQty) * 100).toFixed(2) + '%' : '0.00%'
+
+      return {
+        count,
+        totalQty,
+        totalDefect,
+        defectRate,
+        percent: total > 0 ? Math.round((count / total) * 100) : 0,
+      }
+    }
+
+    const smt = getProcessData('SMT')
+    const ai = getProcessData('AI')
+    const dip = getProcessData('DIP')
+    const avr = getProcessData('AVR')
+
+    const totalQtyAll = list.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)
+    const totalDefectAll = list.reduce((sum, r) => sum + (Number(r.defectQuantity) || 0), 0)
+    const overallDefectRate = totalQtyAll > 0 ? ((totalDefectAll / totalQtyAll) * 100).toFixed(2) + '%' : '0.00%'
+
+    return {
+      total,
+      // Số lượng báo cáo theo từng công đoạn (giữ tương thích ngược hoàn toàn)
+      smt: smt.count,
+      ai: ai.count,
+      dip: dip.count,
+      avr: avr.count,
+      // Tỷ lệ % báo cáo
+      smtPercent: smt.percent,
+      aiPercent: ai.percent,
+      dipPercent: dip.percent,
+      avrPercent: avr.percent,
+      // Chi tiết sản lượng & số lượng lỗi của từng công đoạn
+      smtDetails: smt,
+      aiDetails: ai,
+      dipDetails: dip,
+      avrDetails: avr,
+      // Tổng sản lượng và tổng số lỗi của toàn bộ báo cáo trong khoảng ngày lọc
+      totalQuantity: totalQtyAll,
+      totalDefectQuantity: totalDefectAll,
+      overallDefectRate,
+      // Cờ báo hiệu đang có bộ lọc ngày hoạt động
+      isDateFiltered: Boolean(
+        dateRange.value &&
+        (Array.isArray(dateRange.value)
+          ? dateRange.value.some((d) => Boolean(d))
+          : Boolean(dateRange.value))
+      ),
+    }
+  })
+
+  // Chuỗi hiển thị khoảng ngày lọc thân thiện cho người dùng (ví dụ: '18/09/2026' hoặc '15/09 - 18/09/2026')
+  const dateRangeDisplay = computed(() => {
+    if (!dateRange.value) return ''
+    if (Array.isArray(dateRange.value)) {
+      const d0 = dateRange.value[0] ? normalizeToDateString(dateRange.value[0]) : ''
+      const d1 = dateRange.value[1] ? normalizeToDateString(dateRange.value[1]) : ''
+      if (d0 && d1) {
+        if (d0 === d1) {
+          const [y, m, d] = d0.split('-')
+          return `${d}/${m}/${y}`
+        }
+        const [y0, m0, d0p] = d0.split('-')
+        const [y1, m1, d1p] = d1.split('-')
+        return `${d0p}/${m0}/${y0} - ${d1p}/${m1}/${y1}`
+      }
+      if (d0) {
+        const [y, m, d] = d0.split('-')
+        return `Từ ${d}/${m}/${y}`
+      }
+      if (d1) {
+        const [y, m, d] = d1.split('-')
+        return `Đến ${d}/${m}/${y}`
+      }
+    }
+    const single = normalizeToDateString(dateRange.value)
+    if (single) {
+      const [y, m, d] = single.split('-')
+      return `${d}/${m}/${y}`
+    }
+    return String(dateRange.value)
+  })
+
+  function setDateToday() {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    const d = String(today.getDate()).padStart(2, '0')
+    const dateStr = `${y}-${m}-${d}`
+    dateRange.value = [dateStr, dateStr]
+    currentPage.value = 1
+  }
+
+  function setDateYesterday() {
+    const yest = new Date()
+    yest.setDate(yest.getDate() - 1)
+    const y = yest.getFullYear()
+    const m = String(yest.getMonth() + 1).padStart(2, '0')
+    const d = String(yest.getDate()).padStart(2, '0')
+    const dateStr = `${y}-${m}-${d}`
+    dateRange.value = [dateStr, dateStr]
+    currentPage.value = 1
+  }
+
+  function setDateLast7Days() {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(end.getDate() - 6)
+    const format = (dt) => {
+      const y = dt.getFullYear()
+      const m = String(dt.getMonth() + 1).padStart(2, '0')
+      const d = String(dt.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+    dateRange.value = [format(start), format(end)]
+    currentPage.value = 1
+  }
+
   const filteredReports = computed(() =>
-    reports.value.filter((report) => {
+    dateFilteredReports.value.filter((report) => {
       const keyword = searchText.value.toLowerCase().trim()
       const matchesSearch =
         !keyword ||
@@ -531,20 +702,12 @@ export function useReports() {
 
       let matchesProcess = true
       if (processFilter.value !== 'all') {
-        matchesProcess = report.process === processFilter.value
+        const target = processFilter.value.toUpperCase()
+        const proc = (report.process || '').toString().trim().toUpperCase()
+        matchesProcess = proc === target || proc.startsWith(target + ' ') || proc.startsWith(target + '-')
       }
 
-      let matchesDate = true
-      if (dateRange.value && Array.isArray(dateRange.value) && dateRange.value.length === 2 && dateRange.value[0] && dateRange.value[1]) {
-        const reportDateStr = normalizeToDateString(report.date || report.createdAt)
-        if (reportDateStr) {
-          matchesDate = reportDateStr >= dateRange.value[0] && reportDateStr <= dateRange.value[1]
-        } else {
-          matchesDate = false
-        }
-      }
-
-      return matchesSearch && matchesStat && matchesStatus && matchesSeverity && matchesProcess && matchesDate
+      return matchesSearch && matchesStat && matchesStatus && matchesSeverity && matchesProcess
     })
   )
 
@@ -1229,6 +1392,10 @@ export function useReports() {
     updateStatus,
     saveReport,
     removeReport,
+    dateRangeDisplay,
+    setDateToday,
+    setDateYesterday,
+    setDateLast7Days,
     changePage,
   }
 }

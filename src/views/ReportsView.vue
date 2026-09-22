@@ -101,6 +101,10 @@ const {
   updateStatus,
   saveReport,
   removeReport,
+  dateRangeDisplay,
+  setDateToday,
+  setDateYesterday,
+  setDateLast7Days,
   changePage,
 } = useReports()
 
@@ -228,16 +232,37 @@ const isMobileLayout = computed(() => windowWidth.value < 768)
       <div
         class="stat-card stat-smt animate-in stagger-1"
         :class="{ 'active-stat': processFilter === 'SMT' }"
-        title="Lọc báo cáo công đoạn SMT (Nhấp lần nữa để bỏ lọc)"
+        :title="processStats.isDateFiltered ? `Lọc công đoạn SMT (${dateRangeDisplay}) - Nhấp lần nữa để bỏ lọc` : 'Lọc báo cáo công đoạn SMT (Nhấp lần nữa để bỏ lọc)'"
         @click="toggleProcessFilter('SMT')"
       >
         <div class="stat-top">
           <span>Công đoạn SMT</span>
           <div class="stat-icon cyan"><ToolOutlined /></div>
         </div>
-        <strong>{{ processStats.smt }}</strong>
+        <div class="stat-main-row">
+          <strong class="stat-number">{{ processStats.smt }}</strong>
+          <span class="stat-unit">báo cáo</span>
+          <span v-if="processStats.isDateFiltered" class="stat-date-badge" :title="'Đang lọc theo ngày: ' + dateRangeDisplay">
+            <CalendarOutlined style="margin-right: 3px;" />{{ dateRangeDisplay }}
+          </span>
+        </div>
+        <!-- Chi tiết số lượng sản phẩm & số lượng lỗi -->
+        <div class="stat-qty-meta">
+          <div class="stat-qty-col" title="Tổng số lượng sản phẩm kiểm tra">
+            <span class="stat-qty-lbl">Tổng SL:</span>
+            <span class="stat-qty-val">{{ Number(processStats.smtDetails?.totalQty || 0).toLocaleString() }}</span>
+          </div>
+          <div class="stat-qty-divider">•</div>
+          <div class="stat-qty-col defect" title="Tổng số lượng sản phẩm lỗi">
+            <span class="stat-qty-lbl">Lỗi:</span>
+            <span class="stat-qty-val">{{ Number(processStats.smtDetails?.totalDefect || 0).toLocaleString() }}</span>
+          </div>
+        </div>
         <div class="stat-foot">
-          <span class="trend-neutral">{{ processStats.smtPercent }}%</span> tổng báo cáo phát sinh
+          <span class="trend-neutral">{{ processStats.smtPercent }}%</span> tổng báo cáo
+          <span v-if="processStats.smtDetails?.totalDefect > 0" class="stat-rate-tag">
+            TL lỗi: {{ processStats.smtDetails.defectRate }}
+          </span>
         </div>
       </div>
 
@@ -245,16 +270,37 @@ const isMobileLayout = computed(() => windowWidth.value < 768)
       <div
         class="stat-card stat-ai animate-in stagger-2"
         :class="{ 'active-stat': processFilter === 'AI' }"
-        title="Lọc báo cáo công đoạn AI (Nhấp lần nữa để bỏ lọc)"
+        :title="processStats.isDateFiltered ? `Lọc công đoạn AI (${dateRangeDisplay}) - Nhấp lần nữa để bỏ lọc` : 'Lọc báo cáo công đoạn AI (Nhấp lần nữa để bỏ lọc)'"
         @click="toggleProcessFilter('AI')"
       >
         <div class="stat-top">
           <span>Công đoạn AI</span>
           <div class="stat-icon purple"><ThunderboltOutlined /></div>
         </div>
-        <strong>{{ processStats.ai }}</strong>
+        <div class="stat-main-row">
+          <strong class="stat-number">{{ processStats.ai }}</strong>
+          <span class="stat-unit">báo cáo</span>
+          <span v-if="processStats.isDateFiltered" class="stat-date-badge" :title="'Đang lọc theo ngày: ' + dateRangeDisplay">
+            <CalendarOutlined style="margin-right: 3px;" />{{ dateRangeDisplay }}
+          </span>
+        </div>
+        <!-- Chi tiết số lượng sản phẩm & số lượng lỗi -->
+        <div class="stat-qty-meta">
+          <div class="stat-qty-col" title="Tổng số lượng sản phẩm kiểm tra">
+            <span class="stat-qty-lbl">Tổng SL:</span>
+            <span class="stat-qty-val">{{ Number(processStats.aiDetails?.totalQty || 0).toLocaleString() }}</span>
+          </div>
+          <div class="stat-qty-divider">•</div>
+          <div class="stat-qty-col defect" title="Tổng số lượng sản phẩm lỗi">
+            <span class="stat-qty-lbl">Lỗi:</span>
+            <span class="stat-qty-val">{{ Number(processStats.aiDetails?.totalDefect || 0).toLocaleString() }}</span>
+          </div>
+        </div>
         <div class="stat-foot">
-          <span class="trend-warn">{{ processStats.aiPercent }}%</span> tổng báo cáo phát sinh
+          <span class="trend-warn">{{ processStats.aiPercent }}%</span> tổng báo cáo
+          <span v-if="processStats.aiDetails?.totalDefect > 0" class="stat-rate-tag">
+            TL lỗi: {{ processStats.aiDetails.defectRate }}
+          </span>
         </div>
       </div>
 
@@ -262,16 +308,37 @@ const isMobileLayout = computed(() => windowWidth.value < 768)
       <div
         class="stat-card stat-dip animate-in stagger-3"
         :class="{ 'active-stat': processFilter === 'DIP' }"
-        title="Lọc báo cáo công đoạn DIP (Nhấp lần nữa để bỏ lọc)"
+        :title="processStats.isDateFiltered ? `Lọc công đoạn DIP (${dateRangeDisplay}) - Nhấp lần nữa để bỏ lọc` : 'Lọc báo cáo công đoạn DIP (Nhấp lần nữa để bỏ lọc)'"
         @click="toggleProcessFilter('DIP')"
       >
         <div class="stat-top">
           <span>Công đoạn DIP</span>
           <div class="stat-icon amber"><BranchesOutlined /></div>
         </div>
-        <strong>{{ processStats.dip }}</strong>
+        <div class="stat-main-row">
+          <strong class="stat-number">{{ processStats.dip }}</strong>
+          <span class="stat-unit">báo cáo</span>
+          <span v-if="processStats.isDateFiltered" class="stat-date-badge" :title="'Đang lọc theo ngày: ' + dateRangeDisplay">
+            <CalendarOutlined style="margin-right: 3px;" />{{ dateRangeDisplay }}
+          </span>
+        </div>
+        <!-- Chi tiết số lượng sản phẩm & số lượng lỗi -->
+        <div class="stat-qty-meta">
+          <div class="stat-qty-col" title="Tổng số lượng sản phẩm kiểm tra">
+            <span class="stat-qty-lbl">Tổng SL:</span>
+            <span class="stat-qty-val">{{ Number(processStats.dipDetails?.totalQty || 0).toLocaleString() }}</span>
+          </div>
+          <div class="stat-qty-divider">•</div>
+          <div class="stat-qty-col defect" title="Tổng số lượng sản phẩm lỗi">
+            <span class="stat-qty-lbl">Lỗi:</span>
+            <span class="stat-qty-val">{{ Number(processStats.dipDetails?.totalDefect || 0).toLocaleString() }}</span>
+          </div>
+        </div>
         <div class="stat-foot">
-          <span class="trend-warn">{{ processStats.dipPercent }}%</span> tổng báo cáo phát sinh
+          <span class="trend-warn">{{ processStats.dipPercent }}%</span> tổng báo cáo
+          <span v-if="processStats.dipDetails?.totalDefect > 0" class="stat-rate-tag">
+            TL lỗi: {{ processStats.dipDetails.defectRate }}
+          </span>
         </div>
       </div>
 
@@ -279,16 +346,37 @@ const isMobileLayout = computed(() => windowWidth.value < 768)
       <div
         class="stat-card stat-avr animate-in stagger-4"
         :class="{ 'active-stat': processFilter === 'AVR' }"
-        title="Lọc báo cáo công đoạn AVR (Nhấp lần nữa để bỏ lọc)"
+        :title="processStats.isDateFiltered ? `Lọc công đoạn AVR (${dateRangeDisplay}) - Nhấp lần nữa để bỏ lọc` : 'Lọc báo cáo công đoạn AVR (Nhấp lần nữa để bỏ lọc)'"
         @click="toggleProcessFilter('AVR')"
       >
         <div class="stat-top">
           <span>Công đoạn AVR</span>
           <div class="stat-icon emerald"><DashboardOutlined /></div>
         </div>
-        <strong>{{ processStats.avr }}</strong>
+        <div class="stat-main-row">
+          <strong class="stat-number">{{ processStats.avr }}</strong>
+          <span class="stat-unit">báo cáo</span>
+          <span v-if="processStats.isDateFiltered" class="stat-date-badge" :title="'Đang lọc theo ngày: ' + dateRangeDisplay">
+            <CalendarOutlined style="margin-right: 3px;" />{{ dateRangeDisplay }}
+          </span>
+        </div>
+        <!-- Chi tiết số lượng sản phẩm & số lượng lỗi -->
+        <div class="stat-qty-meta">
+          <div class="stat-qty-col" title="Tổng số lượng sản phẩm kiểm tra">
+            <span class="stat-qty-lbl">Tổng SL:</span>
+            <span class="stat-qty-val">{{ Number(processStats.avrDetails?.totalQty || 0).toLocaleString() }}</span>
+          </div>
+          <div class="stat-qty-divider">•</div>
+          <div class="stat-qty-col defect" title="Tổng số lượng sản phẩm lỗi">
+            <span class="stat-qty-lbl">Lỗi:</span>
+            <span class="stat-qty-val">{{ Number(processStats.avrDetails?.totalDefect || 0).toLocaleString() }}</span>
+          </div>
+        </div>
         <div class="stat-foot">
-          <span class="trend-up">{{ processStats.avrPercent }}%</span> tổng báo cáo phát sinh
+          <span class="trend-up">{{ processStats.avrPercent }}%</span> tổng báo cáo
+          <span v-if="processStats.avrDetails?.totalDefect > 0" class="stat-rate-tag">
+            TL lỗi: {{ processStats.avrDetails.defectRate }}
+          </span>
         </div>
       </div>
     </div>
@@ -339,18 +427,38 @@ const isMobileLayout = computed(() => windowWidth.value < 768)
           </a-select>
 
           <!-- Date Range Filter (Bộ lọc theo khoảng ngày) -->
-          <a-range-picker
-            v-model:value="dateRange"
-            value-format="YYYY-MM-DD"
-            format="DD/MM/YYYY"
-            class="filter-date-picker"
-            size="large"
-            :placeholder="t('dateRangePlaceholder')"
-            allow-clear
-            @change="currentPage = 1"
-          >
-            <template #suffixIcon><CalendarOutlined /></template>
-          </a-range-picker>
+          <div class="date-filter-wrapper">
+            <a-range-picker
+              v-model:value="dateRange"
+              value-format="YYYY-MM-DD"
+              format="DD/MM/YYYY"
+              class="filter-date-picker"
+              size="large"
+              :placeholder="t('dateRangePlaceholder')"
+              allow-clear
+              @change="currentPage = 1"
+            >
+              <template #suffixIcon><CalendarOutlined /></template>
+            </a-range-picker>
+            <div class="quick-date-buttons">
+              <button
+                type="button"
+                class="quick-date-btn"
+                title="Lọc báo cáo phát sinh trong ngày hôm nay"
+                @click="setDateToday"
+              >
+                Hôm nay
+              </button>
+              <button
+                type="button"
+                class="quick-date-btn"
+                title="Lọc báo cáo trong 7 ngày gần nhất"
+                @click="setDateLast7Days"
+              >
+                7 ngày
+              </button>
+            </div>
+          </div>
 
           <a-button class="filter-reset-btn" @click="resetFilters">
             <ReloadOutlined /> {{ t('resetFilter') }}
