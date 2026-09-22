@@ -84,6 +84,8 @@ const {
   filterByStat,
   reports,
   batchImportReports,
+  isFirestoreLoading,
+  isImportingReports,
   resetFilters,
   openCreate,
   openEdit,
@@ -94,6 +96,9 @@ const {
   removeReport,
   changePage,
 } = useReports()
+
+// ─── Loading state tổng hợp cho bảng báo cáo ───
+const isTableLoading = computed(() => isFirestoreLoading.value || isImportingReports.value)
 
 // ─── Quản lý Import & Export Excel ───
 const isImportModalOpen = ref(false)
@@ -119,7 +124,8 @@ async function handleBatchImported(payload) {
   try {
     const records = Array.isArray(payload) ? payload : (payload.records || [])
     const mode = (payload && payload.mode) ? payload.mode : 'overwrite'
-    await batchImportReports(records, mode)
+    const onProgress = (payload && payload.onProgress) ? payload.onProgress : null
+    await batchImportReports(records, mode, onProgress)
   } catch (err) {
     console.error('Lỗi khi import:', err)
   }
@@ -421,6 +427,7 @@ const drawerWidth = computed(() => {
         row-key="id"
         bordered
         :scroll="{ x: 2090 }"
+        :loading="isTableLoading"
       >
         <!-- 1. STT Column -->
         <a-table-column :title="t('colNo')" key="stt" :width="65" align="center" fixed="left">
@@ -455,11 +462,13 @@ const drawerWidth = computed(() => {
         </a-table-column>
 
         <!-- 5. Machine Column -->
-        <a-table-column :title="t('colMachine')" key="machine" :width="150">
+        <a-table-column :title="t('colMachine')" key="machine" :width="170">
           <template #default="{ record }">
-            <span class="machine-text" :title="record.machine">
-              <ToolOutlined />{{ record.machine }}
+            <span v-if="record.machine && record.machine.trim()" class="machine-text" :title="record.machine">
+              <ToolOutlined class="machine-icon" />
+              <span class="machine-name">{{ record.machine }}</span>
             </span>
+            <span v-else class="text-muted" style="display: block; opacity: 0.35;">—</span>
           </template>
         </a-table-column>
 
@@ -1367,6 +1376,7 @@ const drawerWidth = computed(() => {
     <ExcelImportModal
       v-model:visible="isImportModalOpen"
       :existing-reports="reports"
+      :import-handler="batchImportReports"
       @imported="handleBatchImported"
     />
   </div>

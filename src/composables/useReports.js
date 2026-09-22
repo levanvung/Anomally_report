@@ -17,10 +17,10 @@ import {
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage'
-import { db, storage, isFirebaseConfigured, isStorageEnabled } from '../firebase/config'
-import { useAuth } from './useAuth'
-import { useI18n } from './useI18n'
-import { compressImage, formatFileSize } from '../utils/imageCompressor'
+import { db, storage, isFirebaseConfigured, isStorageEnabled } from '../firebase/config.js'
+import { useAuth } from './useAuth.js'
+import { useI18n } from './useI18n.js'
+import { compressImage, formatFileSize } from '../utils/imageCompressor.js'
 
 export { formatFileSize }
 
@@ -226,11 +226,26 @@ function loadLocalReports() {
 }
 
 function saveLocalReports(data) {
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
+  } catch (err) {
+    console.warn('localStorage vượt hạn mức (QuotaExceeded), tự động tối ưu ảnh:', err)
+    try {
+      // Giữ lại 1 ảnh đầu tiên cho mỗi báo cáo để luôn vừa vặn 5MB của localStorage
+      const compact = data.map((r) => ({
+        ...r,
+        images: r.images && r.images.length > 0 ? [{ id: r.images[0].id, url: r.images[0].url, name: r.images[0].name }] : [],
+      }))
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(compact))
+    } catch (e2) {
+      console.error('Không thể lưu localStorage fallback:', e2)
+    }
+  }
 }
 
 const reports = ref(loadLocalReports())
 const isFirestoreLoading = ref(false)
+const isImportingReports = ref(false)
 
 // Khởi tạo Firestore realtime listener kết nối dữ liệu thật
 if (isFirebaseConfigured && db) {
@@ -945,12 +960,32 @@ export function useReports() {
     currentPage.value = page
   }
 
-  async function batchImportReports(importedList = [], duplicateMode = 'overwrite') {
-    if (!importedList || importedList.length === 0) return { count: 0, added: 0, updated: 0, skipped: 0 }
+  async function batchImportReports(importedList = [], duplicateMode = 'overwrite', onProgress = null) {
+    if (!importedList || importedList.length === 0) {
+      return { count: 0, added: 0, updated: 0, skipped: 0, summary: 'Không có dữ liệu để nhập' }
+    }
 
+    isImportingReports.value = true
     let addedCount = 0
     let updatedCount = 0
     let skippedCount = 0
+    const total = importedList.length
+
+    const reportProgress = (index, rep, action) => {
+      if (typeof onProgress === 'function') {
+        const current = index + 1
+        const percent = Math.min(100, Math.round((current / total) * 100))
+        onProgress({
+          current,
+          total,
+          percent,
+          added: addedCount,
+          updated: updatedCount,
+          skipped: skippedCount,
+          statusText: `Đang lưu (${current}/${total}): ${rep.productModel || ''} - ${rep.process || ''} (${action || 'Đang xử lý'})`,
+        })
+      }
+    }
 
     const norm = (str) => (str || '').toString().trim().toLowerCase()
 
@@ -966,13 +1001,31 @@ export function useReports() {
 
     try {
       if (isFirebaseConfigured && db) {
-        for (const rep of importedList) {
+        for (let i = 0; i < total; i++) {
+          const rep = importedList[i]
           const matched = duplicateMode !== 'add_all' ? findMatch(rep) : null
 
           if (matched && duplicateMode === 'skip') {
             skippedCount++
+            reportProgress(i, rep, 'Bỏ qua')
             continue
           }
+
+          // Xử lý ảnh thông minh:
+          // 1. Nếu bản ghi cũ đã có ảnh trên hệ thống (đã chụp/vẽ marker) -> Giữ nguyên ảnh cũ.
+          // 2. Nếu bản ghi cũ chưa có ảnh hoặc là bản ghi mới -> Lấy toàn bộ ảnh trích xuất từ Excel!
+          const existingImgs = matched
+            ? (matched.images && matched.images.length > 0
+                ? matched.images
+                : (matched.imageUrl ? [{ url: matched.imageUrl, path: matched.imagePath || '', name: 'Ảnh đính kèm' }] : []))
+            : []
+          const importedImgs = rep.images && rep.images.length > 0
+            ? rep.images
+            : (rep.imageUrl ? [{ url: rep.imageUrl, name: 'Ảnh lỗi' }] : [])
+
+          const finalImages = existingImgs.length > 0 ? existingImgs : importedImgs
+          const finalImageUrl = finalImages[0]?.url || matched?.imageUrl || rep.imageUrl || ''
+          const finalImagePath = matched?.imagePath || ''
 
           const payload = {
             date: rep.date || new Date().toISOString().split('T')[0],
@@ -991,9 +1044,9 @@ export function useReports() {
             creator: user.value ? (user.value.displayName || user.value.email) : 'Admin (Import)',
             status: rep.status || 'open',
             severity: rep.severity || 'low',
-            images: matched?.images || [],
-            imageUrl: matched?.imageUrl || '',
-            imagePath: matched?.imagePath || '',
+            images: finalImages,
+            imageUrl: finalImageUrl,
+            imagePath: finalImagePath,
             updatedAt: serverTimestamp(),
           }
 
@@ -1001,6 +1054,7 @@ export function useReports() {
             const docRef = doc(db, 'manufacturing_reports', matched.id)
             await updateDoc(docRef, payload)
             updatedCount++
+            reportProgress(i, rep, 'Ghi đè')
           } else {
             await addDoc(collection(db, 'manufacturing_reports'), {
               ...payload,
@@ -1008,10 +1062,12 @@ export function useReports() {
               createdAtTimestamp: serverTimestamp(),
             })
             addedCount++
+            reportProgress(i, rep, 'Thêm mới')
           }
         }
       } else {
-        for (const rep of importedList) {
+        for (let i = 0; i < total; i++) {
+          const rep = importedList[i]
           const matchedIndex = duplicateMode !== 'add_all'
             ? reports.value.findIndex((r) => {
                 return (
@@ -1025,20 +1081,36 @@ export function useReports() {
 
           if (matchedIndex !== -1 && duplicateMode === 'skip') {
             skippedCount++
+            reportProgress(i, rep, 'Bỏ qua')
             continue
           }
 
           if (matchedIndex !== -1 && duplicateMode === 'overwrite') {
+            const existing = reports.value[matchedIndex]
+            const existingImgs = (existing.images && existing.images.length > 0)
+              ? existing.images
+              : (existing.imageUrl ? [{ url: existing.imageUrl, name: 'Ảnh đính kèm' }] : [])
+            const importedImgs = (rep.images && rep.images.length > 0)
+              ? rep.images
+              : (rep.imageUrl ? [{ url: rep.imageUrl, name: 'Ảnh lỗi' }] : [])
+            const finalImages = existingImgs.length > 0 ? existingImgs : importedImgs
+
             reports.value[matchedIndex] = {
-              ...reports.value[matchedIndex],
+              ...existing,
               ...rep,
-              images: reports.value[matchedIndex].images || [],
-              imageUrl: reports.value[matchedIndex].imageUrl || '',
+              images: finalImages,
+              imageUrl: finalImages[0]?.url || existing.imageUrl || rep.imageUrl || '',
             }
             updatedCount++
+            reportProgress(i, rep, 'Ghi đè')
           } else {
-            reports.value.unshift(rep)
+            reports.value.unshift({
+              ...rep,
+              images: rep.images || [],
+              imageUrl: rep.imageUrl || (rep.images?.[0]?.url || ''),
+            })
             addedCount++
+            reportProgress(i, rep, 'Thêm mới')
           }
         }
         saveLocalReports(reports.value)
@@ -1049,11 +1121,32 @@ export function useReports() {
       if (skippedCount > 0) summaryMsg += `, Bỏ qua ${skippedCount}`
       message.success(summaryMsg)
 
-      return { success: true, total: importedList.length, added: addedCount, updated: updatedCount, skipped: skippedCount }
+      if (typeof onProgress === 'function') {
+        onProgress({
+          current: total,
+          total,
+          percent: 100,
+          added: addedCount,
+          updated: updatedCount,
+          skipped: skippedCount,
+          statusText: summaryMsg,
+        })
+      }
+
+      return {
+        success: true,
+        total: importedList.length,
+        added: addedCount,
+        updated: updatedCount,
+        skipped: skippedCount,
+        summary: summaryMsg,
+      }
     } catch (err) {
       console.error('Lỗi batch import:', err)
       message.error('Lỗi khi lưu dữ liệu import: ' + (err.message || ''))
       throw err
+    } finally {
+      isImportingReports.value = false
     }
   }
 
@@ -1061,6 +1154,7 @@ export function useReports() {
     reports,
     batchImportReports,
     isFirestoreLoading,
+    isImportingReports,
     searchText,
     statusFilter,
     severityFilter,

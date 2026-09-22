@@ -5,37 +5,40 @@
     width="980px"
     :footer="null"
     :destroy-on-close="true"
+    :closable="!isImporting"
+    :mask-closable="!isImporting"
     wrap-class-name="excel-import-modal"
-    @cancel="handleClose"
+    @cancel="!isImporting && handleClose()"
   >
     <div class="excel-import-container">
       <!-- Bước 1: Chọn hoặc kéo thả file Excel -->
       <div v-if="!parsedData" class="import-upload-section">
         <div
           class="import-dropzone"
-          :class="{ 'is-dragging': isDragging }"
-          @dragover.prevent="isDragging = true"
-          @dragleave.prevent="isDragging = false"
-          @drop.prevent="onDropFile"
-          @click="triggerFileInput"
+          :class="{ 'is-dragging': isDragging, 'is-parsing': isParsing }"
+          @dragover.prevent="!isParsing && (isDragging = true)"
+          @dragleave.prevent="!isParsing && (isDragging = false)"
+          @drop.prevent="!isParsing && onDropFile($event)"
+          @click="!isParsing && triggerFileInput()"
         >
           <input
             ref="fileInputRef"
             type="file"
             accept=".xlsx, .xls"
             class="hidden-file-input"
+            :disabled="isParsing"
             @change="onFileChange"
           />
           <div class="dropzone-content">
             <div class="dropzone-icon">
               <FileExcelOutlined v-if="!isParsing" />
-              <LoadingOutlined v-else spin />
+              <LoadingOutlined v-else spin class="parsing-spinner-icon" />
             </div>
             <div class="dropzone-title">
               {{ isParsing ? 'Đang đọc và phân tích cấu trúc file Excel...' : 'Kéo thả file Excel vào đây hoặc nhấp để tải lên' }}
             </div>
             <div class="dropzone-hint">
-              Hỗ trợ định dạng .xlsx, .xls theo chuẩn báo cáo IPQC Anomaly Report
+              {{ isParsing ? 'Hệ thống đang quét các sheet, trích xuất dữ liệu và nén ảnh đính kèm...' : 'Hỗ trợ định dạng .xlsx, .xls theo chuẩn báo cáo IPQC Anomaly Report' }}
             </div>
           </div>
         </div>
@@ -76,6 +79,7 @@
             <a-select
               v-model:value="selectedSheet"
               style="min-width: 260px;"
+              :disabled="isImporting"
               @change="onSheetChange"
             >
               <a-select-option value="__all__">
@@ -91,7 +95,7 @@
             </a-select>
           </div>
 
-          <a-button class="re-upload-btn" @click="resetUpload">
+          <a-button class="re-upload-btn" :disabled="isImporting" @click="resetUpload">
             <ReloadOutlined /> Chọn file khác
           </a-button>
         </div>
@@ -116,7 +120,7 @@
             </div>
           </div>
 
-          <a-radio-group v-model:value="duplicateMode" class="duplicate-radio-group">
+          <a-radio-group v-model:value="duplicateMode" :disabled="isImporting" class="duplicate-radio-group">
             <a-radio value="overwrite" class="dup-radio-card" :class="{ 'is-selected': duplicateMode === 'overwrite' }">
               <div class="dup-radio-content">
                 <div class="dup-radio-title">
@@ -161,6 +165,9 @@
             </span>
             <div class="preview-stats-badges">
               <span class="preview-badge total">{{ currentDisplayRecords.length }} bản ghi</span>
+              <span v-if="recordsWithImagesCount > 0" class="preview-badge img-badge">
+                📷 {{ recordsWithImagesCount }} có ảnh đính kèm
+              </span>
               <span v-if="duplicateCount > 0 && duplicateMode === 'overwrite'" class="preview-badge dup">
                 {{ duplicateCount }} sẽ ghi đè
               </span>
@@ -175,7 +182,8 @@
               <thead>
                 <tr>
                   <th style="width: 45px;">STT</th>
-                  <th style="width: 90px;">Đối chiếu</th>
+                  <th style="width: 85px;">Đối chiếu</th>
+                  <th style="width: 65px;">Ảnh</th>
                   <th style="width: 90px;">Ngày</th>
                   <th style="width: 80px;">Công đoạn</th>
                   <th style="width: 130px;">Model</th>
@@ -196,6 +204,17 @@
                     <span v-else class="badge-new-tag">
                       Mới
                     </span>
+                  </td>
+                  <td class="text-center">
+                    <div
+                      v-if="item.images && item.images.length > 0"
+                      class="preview-img-cell"
+                      :title="`Báo cáo này có ${item.images.length} ảnh lỗi đính kèm từ Excel`"
+                    >
+                      <img :src="item.images[0].url" class="preview-img-thumb" alt="Defect" />
+                      <span v-if="item.images.length > 1" class="preview-img-badge">+{{ item.images.length - 1 }}</span>
+                    </div>
+                    <span v-else class="preview-no-img">-</span>
                   </td>
                   <td>{{ item.date }}</td>
                   <td>
@@ -236,15 +255,76 @@
             </span>
           </div>
           <div class="footer-btns">
-            <a-button @click="handleClose">Huỷ bỏ</a-button>
+            <a-button :disabled="isImporting" @click="handleClose">Huỷ bỏ</a-button>
             <a-button
               type="primary"
               :loading="isImporting"
               class="confirm-import-btn"
               @click="confirmImport"
             >
-              <UploadOutlined /> Xác nhận Nhập dữ liệu
+              <UploadOutlined v-if="!isImporting" />
+              {{ isImporting ? 'Đang nhập dữ liệu...' : 'Xác nhận Nhập dữ liệu' }}
             </a-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lớp phủ trạng thái Loading Tiến trình Nhập Dữ Liệu -->
+      <div v-if="isImporting || importSuccessResult" class="import-loading-overlay">
+        <div class="import-loading-card">
+          <div class="import-loading-spinner-box">
+            <div v-if="isImporting" class="spinner-halo">
+              <LoadingOutlined spin class="import-spin-icon" />
+            </div>
+            <div v-else class="success-halo">
+              <CheckCircleFilled class="import-success-icon" />
+            </div>
+          </div>
+
+          <h3 class="import-loading-title">
+            {{ isImporting ? 'Đang nhập và đồng bộ dữ liệu vào hệ thống...' : 'Nhập dữ liệu hoàn tất!' }}
+          </h3>
+
+          <p class="import-loading-status">
+            {{ isImporting ? (importProgress.statusText || 'Đang xử lý dữ liệu...') : (importSuccessResult?.summary || 'Dữ liệu đã được lưu thành công vào hệ thống.') }}
+          </p>
+
+          <!-- Thanh tiến trình Ant Design Progress -->
+          <div class="import-progress-box">
+            <a-progress
+              :percent="importProgress.percent"
+              :status="isImporting ? 'active' : 'success'"
+              :stroke-color="{
+                '0%': '#0ea5e9',
+                '50%': '#38bdf8',
+                '100%': '#10b981',
+              }"
+              :stroke-width="12"
+            />
+          </div>
+
+          <!-- Chi tiết thống kê -->
+          <div class="import-progress-stats">
+            <div class="progress-stat-item">
+              <span class="stat-label">Tiến độ</span>
+              <span class="stat-value">{{ importProgress.current }} / {{ importProgress.total }}</span>
+            </div>
+            <div class="progress-stat-item">
+              <span class="stat-label">Thêm mới</span>
+              <span class="stat-value text-success">+{{ importProgress.added }}</span>
+            </div>
+            <div class="progress-stat-item">
+              <span class="stat-label">Ghi đè</span>
+              <span class="stat-value text-warning">⟳ {{ importProgress.updated }}</span>
+            </div>
+            <div class="progress-stat-item">
+              <span class="stat-label">Bỏ qua</span>
+              <span class="stat-value text-muted">⏭ {{ importProgress.skipped }}</span>
+            </div>
+          </div>
+
+          <div v-if="isImporting" class="import-loading-tip">
+            <ClockCircleOutlined /> Vui lòng không đóng trình duyệt hoặc làm mới trang trong khi quá trình lưu đang diễn ra...
           </div>
         </div>
       </div>
@@ -267,6 +347,7 @@ import {
   SafetyCertificateOutlined,
   ExclamationCircleOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { parseExcelReportFile } from '../utils/excelService'
@@ -280,6 +361,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  importHandler: {
+    type: Function,
+    default: null,
+  },
 })
 
 const emit = defineEmits(['update:visible', 'imported'])
@@ -288,6 +373,17 @@ const fileInputRef = ref(null)
 const isDragging = ref(false)
 const isParsing = ref(false)
 const isImporting = ref(false)
+const importSuccessResult = ref(null)
+const importProgress = ref({
+  current: 0,
+  total: 0,
+  percent: 0,
+  added: 0,
+  updated: 0,
+  skipped: 0,
+  statusText: '',
+})
+
 const parsedData = ref(null)
 const selectedSheet = ref('__all__')
 const duplicateMode = ref('overwrite') // 'overwrite' | 'skip' | 'add_all'
@@ -329,6 +425,10 @@ const duplicateCount = computed(() => {
 
 const newCount = computed(() => {
   return Math.max(0, currentDisplayRecords.value.length - duplicateCount.value)
+})
+
+const recordsWithImagesCount = computed(() => {
+  return currentDisplayRecords.value.filter((r) => r.images && r.images.length > 0).length
 })
 
 // Giới hạn hiển thị preview tối đa 50 dòng để mượt mà
@@ -388,9 +488,21 @@ function resetUpload() {
   parsedData.value = null
   selectedSheet.value = '__all__'
   duplicateMode.value = 'overwrite'
+  isImporting.value = false
+  importSuccessResult.value = null
+  importProgress.value = {
+    current: 0,
+    total: 0,
+    percent: 0,
+    added: 0,
+    updated: 0,
+    skipped: 0,
+    statusText: '',
+  }
 }
 
 function handleClose() {
+  if (isImporting.value) return
   resetUpload()
   emit('update:visible', false)
 }
@@ -403,16 +515,50 @@ async function confirmImport() {
   }
 
   isImporting.value = true
+  importSuccessResult.value = null
+  importProgress.value = {
+    current: 0,
+    total: recordsToImport.length,
+    percent: 0,
+    added: 0,
+    updated: 0,
+    skipped: 0,
+    statusText: 'Đang khởi động tiến trình nhập dữ liệu...',
+  }
+
   try {
+    let result = null
+    if (typeof props.importHandler === 'function') {
+      result = await props.importHandler(
+        recordsToImport,
+        duplicateMode.value,
+        (progress) => {
+          importProgress.value = { ...importProgress.value, ...progress }
+        }
+      )
+    }
+
     emit('imported', {
       records: recordsToImport,
       mode: duplicateMode.value,
+      result,
     })
-    handleClose()
+
+    importSuccessResult.value = result || {
+      summary: `Đã nhập thành công ${recordsToImport.length} bản ghi!`,
+    }
+
+    // Đợi 1.2s để người dùng nhìn thấy trạng thái 100% hoàn tất rồi mới tự đóng modal
+    setTimeout(() => {
+      handleClose()
+    }, 1200)
   } catch (err) {
     console.error('Lỗi khi import:', err)
+    message.error('Nhập dữ liệu thất bại: ' + (err.message || 'Lỗi không xác định'))
   } finally {
-    isImporting.value = false
+    if (!importSuccessResult.value) {
+      isImporting.value = false
+    }
   }
 }
 </script>

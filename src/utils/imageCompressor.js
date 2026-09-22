@@ -120,3 +120,56 @@ export function formatFileSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
+/**
+ * Nén chuỗi Data URL ảnh bằng HTML5 Canvas trực tiếp trên trình duyệt
+ * Đảm bảo dung lượng nhẹ, không bao giờ vượt trần giới hạn 1MB của Firestore
+ * @param {string} dataUrl - Chuỗi Base64 Data URL
+ * @param {number} maxDimension - Kích thước tối đa (mặc định 520px)
+ * @param {number} quality - Chất lượng nén JPEG (0.1 - 1.0, mặc định 0.60)
+ * @returns {Promise<string>} Chuỗi Base64 đã nén tối ưu
+ */
+export function compressBase64Image(dataUrl, maxDimension = 520, quality = 0.60) {
+  return new Promise((resolve) => {
+    if (
+      typeof window === 'undefined' ||
+      typeof document === 'undefined' ||
+      !dataUrl ||
+      typeof dataUrl !== 'string' ||
+      !dataUrl.startsWith('data:image/')
+    ) {
+      return resolve(dataUrl)
+    }
+
+    const img = new Image()
+    img.onload = () => {
+      let { width, height } = img
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width)
+          width = maxDimension
+        } else {
+          width = Math.round((width * maxDimension) / height)
+          height = maxDimension
+        }
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, width, height)
+
+      const compressed = canvas.toDataURL('image/jpeg', quality)
+      if (compressed && compressed.length < dataUrl.length) {
+        resolve(compressed)
+      } else {
+        resolve(dataUrl)
+      }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+

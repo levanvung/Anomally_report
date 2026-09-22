@@ -1,5 +1,146 @@
 import * as XLSX from 'xlsx'
-import { calculateDefectRate, getDefectRateLevel } from '../composables/useReports.js'
+import JSZip from 'jszip'
+import { compressBase64Image } from './imageCompressor.js'
+
+function calculateDefectRate(defectQty, totalQty) {
+  const d = Number(defectQty) || 0
+  const q = Number(totalQty) || 0
+  if (q <= 0) return '0.00%'
+  return ((d / q) * 100).toFixed(2) + '%'
+}
+
+function getDefectRateLevel(rateStrOrNum) {
+  const rate = typeof rateStrOrNum === 'string' ? parseFloat(rateStrOrNum) : (Number(rateStrOrNum) || 0)
+  if (rate >= 10) return { label: 'Rất cao (>10%)', severity: 'critical' }
+  if (rate >= 5) return { label: 'Cao (>5%)', severity: 'high' }
+  if (rate >= 1) return { label: 'Cần lưu ý', severity: 'medium' }
+  return { label: 'Ổn định (<1%)', severity: 'low' }
+}
+
+/**
+ * Trích xuất toàn bộ hình ảnh đính kèm (drawing images) từ file .xlsx thông qua cấu trúc OpenXML
+ * Ánh xạ chính xác hình ảnh theo từng Sheet và từng dòng (Row Index)
+ * @param {File|ArrayBuffer} fileOrBuffer
+ * @returns {Promise<Object>} sheetImagesMap: { [sheetName]: { [rowIdx]: [ { id, url, name } ] } }
+ */
+export async function extractImagesFromExcelZip(fileOrBuffer) {
+  try {
+    const zip = await JSZip.loadAsync(fileOrBuffer)
+
+    const wbXmlFile = zip.file('xl/workbook.xml')
+    const wbRelsXmlFile = zip.file('xl/_rels/workbook.xml.rels')
+    if (!wbXmlFile || !wbRelsXmlFile) {
+      return {}
+    }
+
+    const wbXml = await wbXmlFile.async('string')
+    const wbRelsXml = await wbRelsXmlFile.async('string')
+
+    // 1. Ánh xạ quan hệ rId -> đường dẫn file worksheet XML
+    const relsMap = {}
+    const relMatches = wbRelsXml.matchAll(/<Relationship\s+[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/gi)
+    for (const m of relMatches) {
+      relsMap[m[1]] = m[2].replace(/^\/?xl\//, '')
+    }
+
+    // 2. Ánh xạ Sheet name -> đường dẫn file worksheet XML
+    const sheetNameToPath = {}
+    const sheetMatches = wbXml.matchAll(/<sheet\s+[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/gi)
+    for (const m of sheetMatches) {
+      const sheetName = m[1]
+      const rId = m[2]
+      const target = relsMap[rId]
+      if (target) {
+        sheetNameToPath[sheetName] = target
+      }
+    }
+
+    // Cache các ảnh binary base64 để tối ưu hiệu năng
+    const mediaCache = {}
+    const getMediaDataUrl = async (mediaPath) => {
+      if (mediaCache[mediaPath]) return mediaCache[mediaPath]
+      const mFile = zip.file(mediaPath)
+      if (!mFile) return ''
+      const base64 = await mFile.async('base64')
+      const ext = mediaPath.split('.').pop().toLowerCase()
+      const mime = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg')
+      const rawDataUrl = `data:${mime};base64,${base64}`
+
+      // Nén ảnh thông minh bằng Canvas (520px, Q=0.60) để đảm bảo dù có 16 ảnh
+      // thì tổng payload document Firestore vẫn < 500KB (an toàn tuyệt đối dưới ngưỡng 1MB)
+      const optimizedDataUrl = await compressBase64Image(rawDataUrl, 520, 0.60)
+      mediaCache[mediaPath] = optimizedDataUrl
+      return optimizedDataUrl
+    }
+
+    const sheetImagesMap = {}
+
+    // 3. Quét từng worksheet để tìm tệp vẽ drawingX.xml tương ứng
+    for (const [sheetName, sheetRelPath] of Object.entries(sheetNameToPath)) {
+      const sheetFileName = sheetRelPath.split('/').pop()
+      const sheetRelsPath = `xl/worksheets/_rels/${sheetFileName}.rels`
+      const sheetRelsFile = zip.file(sheetRelsPath)
+      if (!sheetRelsFile) continue
+
+      const sheetRelsXml = await sheetRelsFile.async('string')
+      const drawingMatch = sheetRelsXml.match(/Type="[^"]*\/drawing"[^>]*Target="([^"]+)"/i)
+      if (!drawingMatch) continue
+
+      const drawingTarget = drawingMatch[1]
+      const drawingFileName = drawingTarget.split('/').pop()
+      const drawingXmlPath = `xl/drawings/${drawingFileName}`
+      const drawingRelsPath = `xl/drawings/_rels/${drawingFileName}.rels`
+
+      const drawingXmlFile = zip.file(drawingXmlPath)
+      const drawingRelsFile = zip.file(drawingRelsPath)
+      if (!drawingXmlFile || !drawingRelsFile) continue
+
+      const drawingRelsXml = await drawingRelsFile.async('string')
+      const drawingMediaMap = {}
+      const dRelMatches = drawingRelsXml.matchAll(/<Relationship\s+[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/gi)
+      for (const dm of dRelMatches) {
+        const imgFileName = dm[2].split('/').pop()
+        drawingMediaMap[dm[1]] = `xl/media/${imgFileName}`
+      }
+
+      const drawingXml = await drawingXmlFile.async('string')
+      const anchorRegex = /<xdr:(?:twoCellAnchor|oneCellAnchor)[^>]*>[\s\S]*?<\/xdr:(?:twoCellAnchor|oneCellAnchor)>/gi
+      const anchors = drawingXml.match(anchorRegex) || []
+
+      const rowMap = {}
+
+      for (const anchor of anchors) {
+        const rowMatch = anchor.match(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/i)
+        const blipMatch = anchor.match(/<a:blip[^>]*r:embed="([^"]+)"/i)
+
+        if (rowMatch && blipMatch) {
+          const rowIdx = parseInt(rowMatch[1], 10)
+          const rId = blipMatch[1]
+          const mediaPath = drawingMediaMap[rId]
+
+          if (mediaPath && zip.file(mediaPath)) {
+            if (!rowMap[rowIdx]) rowMap[rowIdx] = []
+            const dataUrl = await getMediaDataUrl(mediaPath)
+            if (dataUrl) {
+              rowMap[rowIdx].push({
+                id: `img_excel_${sheetName}_${rowIdx}_${rowMap[rowIdx].length + 1}`,
+                url: dataUrl,
+                name: `${sheetName.split('(')[0].trim()}_dòng${rowIdx + 1}_ảnh${rowMap[rowIdx].length + 1}.jpg`,
+              })
+            }
+          }
+        }
+      }
+
+      sheetImagesMap[sheetName] = rowMap
+    }
+
+    return sheetImagesMap
+  } catch (err) {
+    console.warn('Lỗi khi phân tích cấu trúc ảnh ZIP Excel:', err)
+    return {}
+  }
+}
 
 /**
  * Xuất danh sách báo cáo ra file Excel (.xlsx) theo đúng mẫu chuẩn IPQC
@@ -118,54 +259,44 @@ export function exportReportsToExcel(reports = [], customFilename = '') {
     { wch: 28 }, // Efficiency
     { wch: 28 }, // SOP
     { wch: 28 }, // Progress
-    { wch: 32 }, // Note
-  ]
-
-  // Trộn ô tiêu đề dòng 1 (A1:R1)
-  ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 17 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 17 } },
+    { wch: 35 }, // Note
   ]
 
   const wb = XLSX.utils.book_new()
-  const sheetTitle = 'IPQC_Anomaly_Report'
-  XLSX.utils.book_append_sheet(wb, ws, sheetTitle)
+  XLSX.utils.book_append_sheet(wb, ws, 'Anomaly Reports')
 
-  // 5. Tên file xuất
-  const timeStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
-  const fileName = customFilename || `Bao_cao_bat_thuong_IPQC_${timeStamp}.xlsx`
+  // 5. Tải file xuống máy khách
+  const filename =
+    customFilename ||
+    `Anomaly_Report_Export_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`
+  XLSX.writeFile(wb, filename)
 
-  // 6. Ghi file tải về máy người dùng
-  XLSX.writeFile(wb, fileName)
-  return { fileName, count: reports.length }
+  return { success: true, count: reports.length, filename }
 }
 
 /**
- * Chuẩn hoá ngày tháng từ dữ liệu Excel thành định dạng chuẩn ISO YYYY-MM-DD
- * Hỗ trợ số serial Excel, DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD
+ * Chuẩn hoá ngày tháng từ Excel (hỗ trợ cả Excel serial number lẫn chuỗi DD/MM/YYYY)
+ * @param {any} rawDate
+ * @returns {String} YYYY-MM-DD
  */
-function normalizeExcelDate(val) {
-  if (!val) {
-    const today = new Date()
-    return today.toISOString().split('T')[0]
+export function normalizeExcelDate(rawDate) {
+  if (!rawDate) {
+    return new Date().toISOString().split('T')[0]
   }
 
-  // Trường hợp là số serial của Excel (VD: 46269)
-  if (typeof val === 'number') {
-    try {
-      const dateObj = XLSX.SSF.parse_date_code(val)
-      if (dateObj) {
-        const y = dateObj.y
-        const m = String(dateObj.m).padStart(2, '0')
-        const d = String(dateObj.d).padStart(2, '0')
-        return `${y}-${m}-${d}`
-      }
-    } catch {
-      // Fallback nếu không parse được
+  // Trường hợp là số serial Excel (ví dụ 45539 = 04/09/2026)
+  if (typeof rawDate === 'number') {
+    const excelEpoch = new Date(1899, 11, 30)
+    const dateObj = new Date(excelEpoch.getTime() + rawDate * 86400000)
+    if (!isNaN(dateObj.getTime())) {
+      const y = dateObj.getFullYear()
+      const m = String(dateObj.getMonth() + 1).padStart(2, '0')
+      const d = String(dateObj.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
     }
   }
 
-  const str = String(val).trim()
+  const str = String(rawDate).trim()
 
   // Trường hợp YYYY-MM-DD
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(str)) {
@@ -188,9 +319,9 @@ function normalizeExcelDate(val) {
 
 /**
  * Phân tích file Excel (.xlsx / .xls) tải lên và trích xuất danh sách báo cáo
- * Hỗ trợ đọc nhiều sheet và tự động dò tìm dòng Header
+ * Hỗ trợ đọc nhiều sheet, tự động trích xuất toàn bộ ảnh lỗi nhúng và tự động dò tìm dòng Header
  * @param {File} file - File Excel người dùng tải lên
- * @returns {Promise<Object>} { sheetNames, sheetsMap, allReports }
+ * @returns {Promise<Object>} { sheetNames, sheetsMap, totalRecords }
  */
 export async function parseExcelReportFile(file) {
   const arrayBuffer = await file.arrayBuffer()
@@ -199,6 +330,14 @@ export async function parseExcelReportFile(file) {
   const sheetNames = workbook.SheetNames || []
   if (sheetNames.length === 0) {
     throw new Error('File Excel không có bất kỳ sheet nào')
+  }
+
+  // Trích xuất toàn bộ hình ảnh đính kèm từ các sheet trong file Excel ZIP
+  let sheetImagesMap = {}
+  try {
+    sheetImagesMap = await extractImagesFromExcelZip(arrayBuffer)
+  } catch (err) {
+    console.warn('Không thể trích xuất hình ảnh từ cấu trúc Excel ZIP:', err)
   }
 
   const sheetsMap = {}
@@ -250,6 +389,7 @@ export async function parseExcelReportFile(file) {
     const idxDefectRate = findColIndex(['defect rate', 'tỷ lệ lỗi', '不良率'])
     const idxResp = findColIndex(['chịu trách nhiệm', '责任人', 'responsible'])
     const idxAssignee = findColIndex(['phụ trách', '负责人', 'assignee'])
+    const idxImage = findColIndex(['defect image', 'hình ảnh lỗi', '不良图像', 'hình ảnh', 'image', 'hình'])
     const idxDesc = findColIndex(['defect description', 'mô tả lỗi', '不良描述', 'mô tả'])
     const idxCauses = findColIndex(['causes', 'nguyên nhân', '原因'])
     const idxMeasures = findColIndex(['improvement measures', 'biện pháp', 'cải tiến', '改善對策'])
@@ -320,6 +460,28 @@ export async function parseExcelReportFile(file) {
       else if (procVal.toUpperCase().includes('AI')) normalizedProcess = 'AI'
       else if (procVal.toUpperCase().includes('AVR')) normalizedProcess = 'AVR'
 
+      // Trích xuất danh sách ảnh đính kèm của dòng rIdx từ bản đồ drawing
+      const rowImages =
+        sheetImagesMap[sName] && sheetImagesMap[sName][rIdx]
+          ? [...sheetImagesMap[sName][rIdx]]
+          : []
+
+      // Kiểm tra thêm nếu ô văn bản cột ảnh chứa URL ảnh (http/https/data:image)
+      const rawImgCell = idxImage >= 0 ? String(row[idxImage] || '').trim() : ''
+      if (
+        rawImgCell.startsWith('http://') ||
+        rawImgCell.startsWith('https://') ||
+        rawImgCell.startsWith('data:image/')
+      ) {
+        if (!rowImages.some((img) => img.url === rawImgCell)) {
+          rowImages.push({
+            id: `img_url_${Date.now()}_${rIdx}_${rowImages.length + 1}`,
+            url: rawImgCell,
+            name: `${modelVal || 'Defect'}_anh_${rowImages.length + 1}.jpg`,
+          })
+        }
+      }
+
       sheetReports.push({
         id: reportId,
         date: dateVal,
@@ -338,8 +500,8 @@ export async function parseExcelReportFile(file) {
         status: status,
         severity: severity,
         sheetSource: sName,
-        imageUrl: '',
-        images: [],
+        images: rowImages,
+        imageUrl: rowImages.length > 0 ? rowImages[0].url : '',
         createdAt: new Date().toLocaleDateString('vi-VN'),
       })
     }
