@@ -48,16 +48,6 @@ async function confirmLogout() {
   }
 }
 
-// ─── Ambient Stardust Background Particles ───
-const stardustParticles = Array.from({ length: 36 }, (_, i) => ({
-  id: i,
-  x: Math.floor((i * 4.3 + (i % 3) * 7.7) % 96 + 2),
-  y: Math.floor((i * 6.7 + (i % 5) * 5.1) % 94 + 3),
-  size: ((i % 3) * 0.8 + 1.4).toFixed(1),
-  duration: ((i % 5) * 2.8 + 16).toFixed(1),
-  delay: (-((i * 3.7) % 20)).toFixed(1),
-  opacity: ((i % 4) * 0.12 + 0.35).toFixed(2),
-}))
 </script>
 
 <template>
@@ -92,23 +82,6 @@ const stardustParticles = Array.from({ length: 36 }, (_, i) => ({
       <!-- Sentinel Radar Holographic Scan Sweep -->
       <div class="ambient-radar-sweep"></div>
 
-      <!-- Floating Quantum Stardust Particles -->
-      <div class="ambient-stardust-field">
-        <span
-          v-for="p in stardustParticles"
-          :key="p.id"
-          class="ambient-stardust"
-          :style="{
-            left: p.x + '%',
-            top: p.y + '%',
-            width: p.size + 'px',
-            height: p.size + 'px',
-            animationDuration: p.duration + 's',
-            animationDelay: p.delay + 's',
-            opacity: p.opacity,
-          }"
-        ></span>
-      </div>
     </div>
 
     <!-- Topbar dedicated to Sentinel Anomaly Reporting (ẩn khi ở trang Login) -->

@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   collection,
@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore'
 import {
   ref as storageRef,
@@ -225,22 +226,43 @@ function loadLocalReports() {
   return []
 }
 
+let saveTimer = null
 function saveLocalReports(data) {
-  try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
-  } catch (err) {
-    console.warn('localStorage vượt hạn mức (QuotaExceeded), tự động tối ưu ảnh:', err)
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
     try {
-      // Giữ lại 1 ảnh đầu tiên cho mỗi báo cáo để luôn vừa vặn 5MB của localStorage
-      const compact = data.map((r) => ({
-        ...r,
-        images: r.images && r.images.length > 0 ? [{ id: r.images[0].id, url: r.images[0].url, name: r.images[0].name }] : [],
-      }))
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(compact))
-    } catch (e2) {
-      console.error('Không thể lưu localStorage fallback:', e2)
+      // Giảm tải dung lượng cache offline: Tránh lưu trữ các chuỗi Base64 khổng lồ vào localStorage
+      const lightweight = (data || []).map((r) => {
+        let hasHeavyBase64 = false
+        if (r.imageUrl && r.imageUrl.startsWith('data:') && r.imageUrl.length > 500) {
+          hasHeavyBase64 = true
+        }
+        if (r.images && r.images.some((img) => {
+          const url = typeof img === 'string' ? img : (img?.url || '')
+          return url.startsWith('data:') && url.length > 500
+        })) {
+          hasHeavyBase64 = true
+        }
+
+        if (!hasHeavyBase64) return r
+
+        return {
+          ...r,
+          imageUrl: r.imageUrl && r.imageUrl.length <= 500 ? r.imageUrl : '',
+          images: (r.images || []).map((img) => {
+            const url = typeof img === 'string' ? img : (img?.url || '')
+            if (url.startsWith('data:') && url.length > 500) {
+              return { ...(typeof img === 'object' ? img : {}), url: '', isBase64: true }
+            }
+            return img
+          }),
+        }
+      })
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lightweight))
+    } catch (err) {
+      console.warn('localStorage cache quota, skip large payload:', err)
     }
-  }
+  }, 400)
 }
 
 const reports = ref(loadLocalReports())
@@ -255,6 +277,9 @@ if (isFirebaseConfigured && db) {
     onSnapshot(
       colRef,
       (snapshot) => {
+        // Tạm hoãn listener trong khi đang import theo lô để tránh giật lag UI liên tục
+        if (isImportingReports.value) return
+
         if (!snapshot.empty) {
           const list = snapshot.docs.map((docSnap) => ({
             id: docSnap.id,
@@ -299,6 +324,27 @@ const statusClass = (status) => `status-${status}`
 // Helper chuẩn hoá chuỗi ngày tháng an toàn theo múi giờ địa phương (tránh lỗi lệch ngày UTC)
 export function normalizeToDateString(val) {
   if (!val) return ''
+  if (typeof val === 'string') {
+    const str = val.trim()
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+      return str.slice(0, 10)
+    }
+    const parts = str.split(/[\/\-]/)
+    if (parts.length === 3 && parts[2].length === 4) {
+      const day = parts[0].padStart(2, '0')
+      const month = parts[1].padStart(2, '0')
+      const year = parts[2]
+      return `${year}-${month}-${day}`
+    }
+    const d = new Date(str)
+    if (!isNaN(d.getTime())) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    return ''
+  }
   // Hỗ trợ Dayjs hoặc Moment object
   if (typeof val === 'object' && typeof val.format === 'function') {
     return val.format('YYYY-MM-DD')
@@ -318,24 +364,6 @@ export function normalizeToDateString(val) {
     const year = val.getFullYear()
     const month = String(val.getMonth() + 1).padStart(2, '0')
     const day = String(val.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-  const str = String(val).trim()
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    return str.slice(0, 10)
-  }
-  const parts = str.split(/[\/\-]/)
-  if (parts.length === 3 && parts[2].length === 4) {
-    const day = parts[0].padStart(2, '0')
-    const month = parts[1].padStart(2, '0')
-    const year = parts[2]
-    return `${year}-${month}-${day}`
-  }
-  const d = new Date(str)
-  if (!isNaN(d.getTime())) {
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }
   return ''
@@ -411,8 +439,17 @@ export function getPrimaryReportImage(report) {
 
 export function getReportImageCount(report) {
   if (!report) return 0
-  if (Array.isArray(report.images) && report.images.length > 0) {
-    return report.images.filter((image) => typeof image === 'string' ? Boolean(image) : Boolean(image?.url)).length
+  if (Array.isArray(report.images)) {
+    const len = report.images.length
+    if (len === 0) return report.imageUrl ? 1 : 0
+    let count = 0
+    for (let i = 0; i < len; i++) {
+      const img = report.images[i]
+      if (typeof img === 'string' ? Boolean(img) : Boolean(img?.url)) {
+        count++
+      }
+    }
+    return count > 0 ? count : (report.imageUrl ? 1 : 0)
   }
   return report.imageUrl ? 1 : 0
 }
@@ -511,83 +548,160 @@ export function useReports() {
     else form.severity = 'low'
   }
 
-  // Danh sách báo cáo đã được lọc theo khoảng ngày (hoặc tất cả nếu không chọn ngày)
+  // Danh sách báo cáo đã được lọc theo khoảng ngày (tối ưu hóa 1 lần duy nhất cho min/max date)
   const dateFilteredReports = computed(() => {
-    if (!dateRange.value) return reports.value || []
-    return (reports.value || []).filter((r) => isDateInRange(r.date || r.createdAt, dateRange.value))
+    const all = reports.value
+    if (!all || all.length === 0) return []
+    const range = dateRange.value
+    if (!range) return all
+
+    let start = ''
+    let end = ''
+    if (Array.isArray(range)) {
+      if (range.length === 0) return all
+      if (range[0]) start = normalizeToDateString(range[0])
+      if (range[1]) end = normalizeToDateString(range[1])
+    } else {
+      start = normalizeToDateString(range)
+      end = start
+    }
+    if (!start && !end) return all
+
+    const minD = start && end ? (start <= end ? start : end) : start
+    const maxD = start && end ? (start <= end ? end : start) : end
+
+    return all.filter((r) => {
+      const rDate = normalizeToDateString(r.date || r.createdAt)
+      if (!rDate) return false
+      if (minD && maxD) return rDate >= minD && rDate <= maxD
+      if (minD) return rDate >= minD
+      if (maxD) return rDate <= maxD
+      return true
+    })
   })
 
-  // Thống kê theo trạng thái (Open, Investigating, Resolved, Critical) - tự động đồng bộ theo ngày lọc
+  // Thống kê theo trạng thái (Open, Investigating, Resolved, Critical) - 1 vòng lặp O(N) duy nhất
   const stats = computed(() => {
     const list = dateFilteredReports.value
+    const len = list.length
+    let open = 0
+    let investigating = 0
+    let resolved = 0
+    let critical = 0
+
+    for (let i = 0; i < len; i++) {
+      const r = list[i]
+      const st = r.status
+      if (st === 'open') {
+        open++
+      } else if (st === 'investigating') {
+        investigating++
+      } else if (st === 'resolved' || st === 'closed') {
+        resolved++
+      }
+
+      if (r.severity === 'critical' || parseFloat(r.defectRate) >= 10) {
+        critical++
+      }
+    }
+
     return {
-      total: list.length,
-      open: list.filter((r) => r.status === 'open').length,
-      investigating: list.filter((r) => r.status === 'investigating').length,
-      resolved: list.filter((r) => ['resolved', 'closed'].includes(r.status)).length,
-      critical: list.filter((r) => r.severity === 'critical' || parseFloat(r.defectRate) >= 10).length,
+      total: len,
+      open,
+      investigating,
+      resolved,
+      critical,
     }
   })
 
-  // Thống kê số lượng theo 4 công đoạn chính: SMT, AI, DIP, AVR
-  // Tự động đồng bộ theo khoảng ngày được lọc và tổng hợp cả Sản lượng (Quantity) & Số lỗi (Defect quantity)
+  // Thống kê số lượng theo 4 công đoạn chính: SMT, AI, DIP, AVR - 1 vòng lặp O(N) duy nhất
   const processStats = computed(() => {
     const list = dateFilteredReports.value
     const total = list.length
 
-    const getProcessData = (name) => {
-      const target = name.toUpperCase()
-      const matched = list.filter((r) => {
-        if (!r.process) return false
+    let smtCount = 0, smtQty = 0, smtDefect = 0
+    let aiCount = 0, aiQty = 0, aiDefect = 0
+    let dipCount = 0, dipQty = 0, dipDefect = 0
+    let avrCount = 0, avrQty = 0, avrDefect = 0
+    let totalQtyAll = 0, totalDefectAll = 0
+
+    for (let i = 0; i < total; i++) {
+      const r = list[i]
+      const qty = Number(r.quantity) || 0
+      const defect = Number(r.defectQuantity) || 0
+      totalQtyAll += qty
+      totalDefectAll += defect
+
+      if (r.process) {
         const proc = r.process.toString().trim().toUpperCase()
-        return proc === target || proc.startsWith(target + ' ') || proc.startsWith(target + '-')
-      })
-
-      const count = matched.length
-      const totalQty = matched.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)
-      const totalDefect = matched.reduce((sum, r) => sum + (Number(r.defectQuantity) || 0), 0)
-      const defectRate = totalQty > 0 ? ((totalDefect / totalQty) * 100).toFixed(2) + '%' : '0.00%'
-
-      return {
-        count,
-        totalQty,
-        totalDefect,
-        defectRate,
-        percent: total > 0 ? Math.round((count / total) * 100) : 0,
+        if (proc === 'SMT' || proc.startsWith('SMT ') || proc.startsWith('SMT-')) {
+          smtCount++
+          smtQty += qty
+          smtDefect += defect
+        } else if (proc === 'AI' || proc.startsWith('AI ') || proc.startsWith('AI-')) {
+          aiCount++
+          aiQty += qty
+          aiDefect += defect
+        } else if (proc === 'DIP' || proc.startsWith('DIP ') || proc.startsWith('DIP-')) {
+          dipCount++
+          dipQty += qty
+          dipDefect += defect
+        } else if (proc === 'AVR' || proc.startsWith('AVR ') || proc.startsWith('AVR-')) {
+          avrCount++
+          avrQty += qty
+          avrDefect += defect
+        }
       }
     }
 
-    const smt = getProcessData('SMT')
-    const ai = getProcessData('AI')
-    const dip = getProcessData('DIP')
-    const avr = getProcessData('AVR')
+    const smt = {
+      count: smtCount,
+      totalQty: smtQty,
+      totalDefect: smtDefect,
+      defectRate: smtQty > 0 ? ((smtDefect / smtQty) * 100).toFixed(2) + '%' : '0.00%',
+      percent: total > 0 ? Math.round((smtCount / total) * 100) : 0,
+    }
+    const ai = {
+      count: aiCount,
+      totalQty: aiQty,
+      totalDefect: aiDefect,
+      defectRate: aiQty > 0 ? ((aiDefect / aiQty) * 100).toFixed(2) + '%' : '0.00%',
+      percent: total > 0 ? Math.round((aiCount / total) * 100) : 0,
+    }
+    const dip = {
+      count: dipCount,
+      totalQty: dipQty,
+      totalDefect: dipDefect,
+      defectRate: dipQty > 0 ? ((dipDefect / dipQty) * 100).toFixed(2) + '%' : '0.00%',
+      percent: total > 0 ? Math.round((dipCount / total) * 100) : 0,
+    }
+    const avr = {
+      count: avrCount,
+      totalQty: avrQty,
+      totalDefect: avrDefect,
+      defectRate: avrQty > 0 ? ((avrDefect / avrQty) * 100).toFixed(2) + '%' : '0.00%',
+      percent: total > 0 ? Math.round((avrCount / total) * 100) : 0,
+    }
 
-    const totalQtyAll = list.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)
-    const totalDefectAll = list.reduce((sum, r) => sum + (Number(r.defectQuantity) || 0), 0)
     const overallDefectRate = totalQtyAll > 0 ? ((totalDefectAll / totalQtyAll) * 100).toFixed(2) + '%' : '0.00%'
 
     return {
       total,
-      // Số lượng báo cáo theo từng công đoạn (giữ tương thích ngược hoàn toàn)
       smt: smt.count,
       ai: ai.count,
       dip: dip.count,
       avr: avr.count,
-      // Tỷ lệ % báo cáo
       smtPercent: smt.percent,
       aiPercent: ai.percent,
       dipPercent: dip.percent,
       avrPercent: avr.percent,
-      // Chi tiết sản lượng & số lượng lỗi của từng công đoạn
       smtDetails: smt,
       aiDetails: ai,
       dipDetails: dip,
       avrDetails: avr,
-      // Tổng sản lượng và tổng số lỗi của toàn bộ báo cáo trong khoảng ngày lọc
       totalQuantity: totalQtyAll,
       totalDefectQuantity: totalDefectAll,
       overallDefectRate,
-      // Cờ báo hiệu đang có bộ lọc ngày hoạt động
       isDateFiltered: Boolean(
         dateRange.value &&
         (Array.isArray(dateRange.value)
@@ -664,52 +778,86 @@ export function useReports() {
     currentPage.value = 1
   }
 
-  const filteredReports = computed(() =>
-    dateFilteredReports.value.filter((report) => {
-      const keyword = searchText.value.toLowerCase().trim()
-      const matchesSearch =
-        !keyword ||
-        [
-          report.id,
-          report.productModel,
-          report.process,
-          report.machine,
-          report.defectDescription,
-          report.responsiblePerson,
-          report.assignee,
-          report.creator,
-          report.progressNote,
-        ].some((v) => (v ? String(v).toLowerCase().includes(keyword) : false))
+  // Tối ưu hóa Debounce tìm kiếm mượt mà (160ms) tránh giật lag khi gõ nhanh
+  const debouncedSearch = ref(searchText.value)
+  let searchTimer = null
+  watch(searchText, (newVal) => {
+    if (searchTimer) clearTimeout(searchTimer)
+    if (!newVal) {
+      debouncedSearch.value = ''
+    } else {
+      searchTimer = setTimeout(() => {
+        debouncedSearch.value = newVal
+      }, 160)
+    }
+  })
 
-      let matchesStat = true
-      if (activeStat.value === 'attention') {
-        matchesStat = report.status === 'open' || report.status === 'investigating'
-      } else if (activeStat.value === 'investigating') {
-        matchesStat = report.status === 'investigating'
-      } else if (activeStat.value === 'resolved') {
-        matchesStat = report.status === 'resolved' || report.status === 'closed'
+  const filteredReports = computed(() => {
+    const list = dateFilteredReports.value
+    const kw = debouncedSearch.value ? debouncedSearch.value.toLowerCase().trim() : ''
+    const stat = activeStat.value
+    const stFilter = statusFilter.value
+    const svFilter = severityFilter.value
+    const prFilter = processFilter.value !== 'all' ? processFilter.value.toUpperCase() : null
+
+    // Không có điều kiện lọc nào: Trả về trực tiếp không cần duyệt mảng
+    if (!kw && stat === 'all' && stFilter === 'all' && svFilter === 'all' && !prFilter) {
+      return list
+    }
+
+    const result = []
+    const len = list.length
+    for (let i = 0; i < len; i++) {
+      const report = list[i]
+
+      // 1. Status Filter
+      if (stFilter !== 'all' && report.status !== stFilter) {
+        continue
       }
 
-      let matchesStatus = true
-      if (statusFilter.value !== 'all') {
-        matchesStatus = report.status === statusFilter.value
+      // 2. Active Stat Chip
+      if (stat === 'attention') {
+        if (report.status !== 'open' && report.status !== 'investigating') continue
+      } else if (stat === 'investigating') {
+        if (report.status !== 'investigating') continue
+      } else if (stat === 'resolved') {
+        if (report.status !== 'resolved' && report.status !== 'closed') continue
       }
 
-      let matchesSeverity = true
-      if (severityFilter.value !== 'all') {
-        matchesSeverity = report.severity === severityFilter.value
+      // 3. Severity Filter
+      if (svFilter !== 'all' && report.severity !== svFilter) {
+        continue
       }
 
-      let matchesProcess = true
-      if (processFilter.value !== 'all') {
-        const target = processFilter.value.toUpperCase()
+      // 4. Process Filter
+      if (prFilter) {
         const proc = (report.process || '').toString().trim().toUpperCase()
-        matchesProcess = proc === target || proc.startsWith(target + ' ') || proc.startsWith(target + '-')
+        if (proc !== prFilter && !proc.startsWith(prFilter + ' ') && !proc.startsWith(prFilter + '-')) {
+          continue
+        }
       }
 
-      return matchesSearch && matchesStat && matchesStatus && matchesSeverity && matchesProcess
-    })
-  )
+      // 5. Keyword search (Short-circuit checks, không phân bổ mảng tạm thời)
+      if (kw) {
+        const matched =
+          (report.productModel && String(report.productModel).toLowerCase().includes(kw)) ||
+          (report.defectDescription && String(report.defectDescription).toLowerCase().includes(kw)) ||
+          (report.process && String(report.process).toLowerCase().includes(kw)) ||
+          (report.machine && String(report.machine).toLowerCase().includes(kw)) ||
+          (report.responsiblePerson && String(report.responsiblePerson).toLowerCase().includes(kw)) ||
+          (report.assignee && String(report.assignee).toLowerCase().includes(kw)) ||
+          (report.id && String(report.id).toLowerCase().includes(kw)) ||
+          (report.creator && String(report.creator).toLowerCase().includes(kw)) ||
+          (report.progressNote && String(report.progressNote).toLowerCase().includes(kw))
+
+        if (!matched) continue
+      }
+
+      result.push(report)
+    }
+
+    return result
+  })
 
   const pagedReports = computed(() =>
     filteredReports.value.slice((currentPage.value - 1) * pageSize, currentPage.value * pageSize)
@@ -1168,22 +1316,24 @@ export function useReports() {
     }
 
     const norm = (str) => (str || '').toString().trim().toLowerCase()
+    const makeKey = (d, m, p, desc) => `${norm(d)}|${norm(m)}|${norm(p)}|${norm(desc)}`
 
-    const findMatch = (newRep) => {
-      return reports.value.find((r) => {
-        const sameDate = norm(r.date) === norm(newRep.date)
-        const sameModel = norm(r.productModel) === norm(newRep.productModel)
-        const sameProcess = norm(r.process) === norm(newRep.process)
-        const sameDesc = norm(r.defectDescription) === norm(newRep.defectDescription)
-        return sameDate && sameModel && sameProcess && sameDesc
-      })
+    // Xây dựng bảng tra cứu O(1) thay vì O(N*M) quét tuyến tính
+    const existingMap = new Map()
+    for (const r of reports.value) {
+      existingMap.set(makeKey(r.date, r.productModel, r.process, r.defectDescription), r)
     }
 
     try {
       if (isFirebaseConfigured && db) {
+        let currentBatch = writeBatch(db)
+        let batchOpsCount = 0
+        const BATCH_SIZE = 350
+
         for (let i = 0; i < total; i++) {
           const rep = importedList[i]
-          const matched = duplicateMode !== 'add_all' ? findMatch(rep) : null
+          const key = makeKey(rep.date, rep.productModel, rep.process, rep.defectDescription)
+          const matched = duplicateMode !== 'add_all' ? existingMap.get(key) : null
 
           if (matched && duplicateMode === 'skip') {
             skippedCount++
@@ -1191,9 +1341,6 @@ export function useReports() {
             continue
           }
 
-          // Xử lý ảnh thông minh:
-          // 1. Nếu bản ghi cũ đã có ảnh trên hệ thống (đã chụp/vẽ marker) -> Giữ nguyên ảnh cũ.
-          // 2. Nếu bản ghi cũ chưa có ảnh hoặc là bản ghi mới -> Lấy toàn bộ ảnh trích xuất từ Excel!
           const existingImgs = matched
             ? (matched.images && matched.images.length > 0
                 ? matched.images
@@ -1232,11 +1379,12 @@ export function useReports() {
 
           if (matched && duplicateMode === 'overwrite') {
             const docRef = doc(db, 'manufacturing_reports', matched.id)
-            await updateDoc(docRef, payload)
+            currentBatch.update(docRef, payload)
             updatedCount++
             reportProgress(i, rep, 'Ghi đè')
           } else {
-            await addDoc(collection(db, 'manufacturing_reports'), {
+            const newDocRef = doc(collection(db, 'manufacturing_reports'))
+            currentBatch.set(newDocRef, {
               ...payload,
               createdAt: rep.createdAt || new Date().toLocaleDateString('vi-VN'),
               createdAtTimestamp: serverTimestamp(),
@@ -1244,29 +1392,41 @@ export function useReports() {
             addedCount++
             reportProgress(i, rep, 'Thêm mới')
           }
+
+          batchOpsCount++
+
+          // Commit theo lô Firestore Batch (tối đa 350 docs/lần commit)
+          if (batchOpsCount >= BATCH_SIZE || i === total - 1) {
+            if (batchOpsCount > 0) {
+              await currentBatch.commit()
+              currentBatch = writeBatch(db)
+              batchOpsCount = 0
+            }
+          }
         }
       } else {
+        // Chế độ Local Storage Fallback
+        const localIndexMap = new Map()
+        for (let idx = 0; idx < reports.value.length; idx++) {
+          const r = reports.value[idx]
+          localIndexMap.set(makeKey(r.date, r.productModel, r.process, r.defectDescription), idx)
+        }
+
+        const newReports = [...reports.value]
+
         for (let i = 0; i < total; i++) {
           const rep = importedList[i]
-          const matchedIndex = duplicateMode !== 'add_all'
-            ? reports.value.findIndex((r) => {
-                return (
-                  norm(r.date) === norm(rep.date) &&
-                  norm(r.productModel) === norm(rep.productModel) &&
-                  norm(r.process) === norm(rep.process) &&
-                  norm(r.defectDescription) === norm(rep.defectDescription)
-                )
-              })
-            : -1
+          const key = makeKey(rep.date, rep.productModel, rep.process, rep.defectDescription)
+          const matchedIdx = duplicateMode !== 'add_all' && localIndexMap.has(key) ? localIndexMap.get(key) : -1
 
-          if (matchedIndex !== -1 && duplicateMode === 'skip') {
+          if (matchedIdx !== -1 && duplicateMode === 'skip') {
             skippedCount++
             reportProgress(i, rep, 'Bỏ qua')
             continue
           }
 
-          if (matchedIndex !== -1 && duplicateMode === 'overwrite') {
-            const existing = reports.value[matchedIndex]
+          if (matchedIdx !== -1 && duplicateMode === 'overwrite') {
+            const existing = newReports[matchedIdx]
             const existingImgs = (existing.images && existing.images.length > 0)
               ? existing.images
               : (existing.imageUrl ? [{ url: existing.imageUrl, name: 'Ảnh đính kèm' }] : [])
@@ -1275,7 +1435,7 @@ export function useReports() {
               : (rep.imageUrl ? [{ url: rep.imageUrl, name: 'Ảnh lỗi' }] : [])
             const finalImages = existingImgs.length > 0 ? existingImgs : importedImgs
 
-            reports.value[matchedIndex] = {
+            newReports[matchedIdx] = {
               ...existing,
               ...rep,
               images: finalImages,
@@ -1284,7 +1444,7 @@ export function useReports() {
             updatedCount++
             reportProgress(i, rep, 'Ghi đè')
           } else {
-            reports.value.unshift({
+            newReports.unshift({
               ...rep,
               images: rep.images || [],
               imageUrl: rep.imageUrl || (rep.images?.[0]?.url || ''),
@@ -1293,6 +1453,8 @@ export function useReports() {
             reportProgress(i, rep, 'Thêm mới')
           }
         }
+
+        reports.value = newReports
         saveLocalReports(reports.value)
       }
 

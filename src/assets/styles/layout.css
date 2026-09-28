@@ -23,6 +23,9 @@
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+  contain: strict;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* 4 Glowing Nebula Orbs */
@@ -31,6 +34,8 @@
   border-radius: 50%;
   filter: blur(48px);
   opacity: 0.7;
+  transform: translateZ(0);
+  contain: layout paint;
 }
 
 /* Keep the atmosphere static so large blurred layers do not monopolize the GPU. */

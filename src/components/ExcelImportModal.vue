@@ -389,17 +389,21 @@ const selectedSheet = ref('__all__')
 const duplicateMode = ref('overwrite') // 'overwrite' | 'skip' | 'add_all'
 
 const norm = (str) => (str || '').toString().trim().toLowerCase()
+const makeKey = (d, m, p, desc) => `${norm(d)}|${norm(m)}|${norm(p)}|${norm(desc)}`
+
+const existingKeySet = computed(() => {
+  const set = new Set()
+  if (!props.existingReports || props.existingReports.length === 0) return set
+  for (let i = 0; i < props.existingReports.length; i++) {
+    const r = props.existingReports[i]
+    set.add(makeKey(r.date, r.productModel, r.process, r.defectDescription))
+  }
+  return set
+})
 
 function isDuplicateRecord(item) {
-  if (!props.existingReports || props.existingReports.length === 0) return false
-  return props.existingReports.some((r) => {
-    return (
-      norm(r.date) === norm(item.date) &&
-      norm(r.productModel) === norm(item.productModel) &&
-      norm(r.process) === norm(item.process) &&
-      norm(r.defectDescription) === norm(item.defectDescription)
-    )
-  })
+  if (!item || existingKeySet.value.size === 0) return false
+  return existingKeySet.value.has(makeKey(item.date, item.productModel, item.process, item.defectDescription))
 }
 
 const totalAvailableRecords = computed(() => {
@@ -420,7 +424,13 @@ const currentDisplayRecords = computed(() => {
 })
 
 const duplicateCount = computed(() => {
-  return currentDisplayRecords.value.filter(isDuplicateRecord).length
+  if (existingKeySet.value.size === 0) return 0
+  const records = currentDisplayRecords.value
+  let count = 0
+  for (let i = 0; i < records.length; i++) {
+    if (isDuplicateRecord(records[i])) count++
+  }
+  return count
 })
 
 const newCount = computed(() => {
@@ -428,7 +438,12 @@ const newCount = computed(() => {
 })
 
 const recordsWithImagesCount = computed(() => {
-  return currentDisplayRecords.value.filter((r) => r.images && r.images.length > 0).length
+  const records = currentDisplayRecords.value
+  let count = 0
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].images && records[i].images.length > 0) count++
+  }
+  return count
 })
 
 // Giới hạn hiển thị preview tối đa 50 dòng để mượt mà

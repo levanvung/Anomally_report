@@ -188,12 +188,18 @@ function handleMarkerApply(result) {
 // ─── Responsive Drawer Width (100% on Mobile/Tablet) ───
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
 
+let resizePending = false
 function handleResize() {
-  windowWidth.value = window.innerWidth
+  if (resizePending) return
+  resizePending = true
+  requestAnimationFrame(() => {
+    windowWidth.value = window.innerWidth
+    resizePending = false
+  })
 }
 
 onMounted(() => {
-  window.addEventListener('resize', handleResize)
+  window.addEventListener('resize', handleResize, { passive: true })
 })
 
 onUnmounted(() => {
