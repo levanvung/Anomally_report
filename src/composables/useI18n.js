@@ -214,7 +214,7 @@ export const messages = {
 
     // Page Heading
     eyebrow: 'INCIDENT OPERATIONS CENTER • REAL-TIME STREAM',
-    title: 'Anomaly Reports',
+    title: 'Anomaly Reports Dashboard',
     subtitle: 'Enterprise platform to detect, classify, and track resolution workflows for anomalies, hazards, and operational risks.',
     createNew: 'Create new',
 
