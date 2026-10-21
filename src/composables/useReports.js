@@ -24,8 +24,8 @@ import { useI18n } from './useI18n.js'
 import { compressImage, formatFileSize } from '../utils/imageCompressor.js'
 
 export { formatFileSize }
-const reports = shallowRef([])
-reports.value = [...reports.value]
+// const reports = shallowRef([])
+// reports.value = [...reports.value]
 const LOCAL_STORAGE_KEY = 'sentinel_reports_manufacturing_v3'
 
 export function calculateDefectRate(defectQty, totalQty) {
