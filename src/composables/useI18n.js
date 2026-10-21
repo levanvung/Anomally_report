@@ -350,7 +350,7 @@ export const messages = {
     logoutConfirm: 'Are you sure you want to sign out?',
     btnSave: 'Save Report',
     btnCancel: 'Cancel',
-    footerCopyright: '© 2026 Copyright owned by Le Van Vung. All rights reserved.',
+    footerCopyright: '© 2026 Copyright owned by Le Van Vung dz. All rights reserved.',
     footerAuthor: 'Designed & Developed by Le Van Vung',
     footerSystemTag: 'Manufacturing QC & Incident Management Operations',
     roleAdmin: 'Administrator',
