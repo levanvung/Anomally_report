@@ -6345,4 +6345,153 @@
     opacity: 1;
   }
 }
+/* ─── TỐI ƯU GIAO DIỆN MOBILE CHO REPORTS VIEW (< 768px) ─── */
+@media (max-width: 768px) {
+  /* 1. Ẩn bớt tiêu đề phụ rườm rà trên mobile */
+  .page-heading {
+    margin-bottom: 12px !important;
+  }
+  .page-heading h1 {
+    font-size: 20px !important;
+  }
+  .page-heading p {
+    font-size: 12px !important;
+    margin-top: 2px !important;
+  }
+
+  /* 2. Chuyển 4 thẻ SMT, AI, DIP, AVR thành Lưới 2x2 gọn gàng */
+  .stats-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .stat-card {
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .stat-top span {
+    font-size: 11px !important;
+  }
+
+  .stat-icon {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 13px !important;
+  }
+
+  .stat-number {
+    font-size: 20px !important;
+  }
+
+  .stat-unit {
+    font-size: 11px !important;
+  }
+
+  .stat-qty-meta {
+    padding: 4px 6px !important;
+    margin: 6px 0 !important;
+    font-size: 10.5px !important;
+  }
+
+  .stat-foot {
+    font-size: 10px !important;
+  }
+
+  /* 3. Thanh Quick Chips cuộn ngang mượt mà trên 1 dòng, không bị rớt dòng chiếm chỗ */
+  .quick-chips {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px !important;
+    gap: 6px !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .quick-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .chip-label {
+    display: none !important;
+  }
+  .chip-btn {
+    flex-shrink: 0 !important;
+    padding: 5px 10px !important;
+    font-size: 11.5px !important;
+  }
+
+  /* 4. Tối ưu Card Báo Cáo trên Mobile: Mượt, gọn, dễ đọc */
+  .report-mobile-card {
+    /* Giúp trình duyệt bỏ qua việc vẽ các thẻ nằm ngoài màn hình -> Cuộn cực mượt */
+    content-visibility: auto;
+    contain-intrinsic-size: 0 280px;
+    padding: 12px !important;
+    border-radius: 14px !important;
+    margin-bottom: 10px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .mobile-metrics-grid {
+    gap: 6px !important;
+    margin: 8px 0 !important;
+  }
+
+  .mobile-metric-item {
+    padding: 6px 8px !important;
+  }
+
+  .mobile-metric-item .metric-label {
+    font-size: 10px !important;
+  }
+
+  .mobile-metric-item .metric-val {
+    font-size: 13px !important;
+  }
+
+  /* Thu gọn chiều cao ảnh preview trên card để không choán hết màn hình */
+  .mobile-card-photo-banner {
+    max-height: 150px !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+  }
+
+  .mobile-card-banner-img {
+    max-height: 150px !important;
+    object-fit: cover !important;
+  }
+
+  /* Giới hạn mô tả lỗi tối đa 2 dòng trên card, bấm vào mới xem toàn bộ */
+  .mobile-desc-content {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 12.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Gom thông tin nhân sự thành lưới 2 cột nhỏ gọn */
+  .mobile-card-meta {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 4px 8px !important;
+    padding: 8px 0 !important;
+    font-size: 11px !important;
+  }
+
+  .mobile-card-meta .date-item {
+    grid-column: 1 / -1;
+  }
+
+  /* Cố định kích thước Modal Chi tiết vừa khít màn hình điện thoại */
+  .detail-modal .ant-modal {
+    max-width: calc(100vw - 16px) !important;
+    margin: 8px auto !important;
+  }
+}
 

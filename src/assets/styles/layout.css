@@ -993,3 +993,84 @@
     padding: 12px 6px 36px;
   }
 }
+/* ==========================================================================
+   TỐI ƯU HIỆU NĂNG DESKTOP & MOBILE (CHỐNG LAG GPU & TABLE HOVER)
+   ========================================================================== */
+
+/* 1. Tắt mask-image và giảm số lượng bóng mờ khổng lồ gây nghẽn GPU trên màn hình FullHD/2K */
+.ambient-orb-emerald,
+.ambient-orb-amber,
+.ambient-orb-rose,
+.ambient-orb-purple,
+.ambient-orb-azure,
+.ambient-radar-sweep {
+  display: none !important;
+}
+
+.ambient-mesh-grid {
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+  opacity: 0.25 !important;
+}
+
+/* 2. Bỏ backdrop-filter trên các khối nội dung cuộn (nguyên nhân số 1 gây giật khi lăn chuột trên PC) */
+.stat-card,
+.control-bar,
+.table-wrap,
+.app-footer,
+.report-mobile-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Chỉ giữ backdrop-filter nhẹ cho thanh Header cố định hoặc thay bằng nền bán trong suốt */
+.app-header {
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* 3. Tắt transition trên từng ô <td> của Ant Design Table (15 cột x 15 dòng = 225 ô tính lại CSS mỗi khi di chuột) */
+.ant-table-tbody > tr:not(.ant-table-measure-row) > td {
+  transition: none !important;
+}
+
+/* 4. Tắt các animation stagger lặp lại gây khựng khi chuyển trang */
+.animate-in {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+/* ─── TỐI ƯU HIỆU NĂNG GPU & MOBILE VIEW ─── */
+@media (max-width: 768px) {
+  /* 1. Tắt hoàn toàn các bóng mờ 500px-680px ngốn GPU trên điện thoại */
+  .ambient-orb-emerald,
+  .ambient-orb-amber,
+  .ambient-orb-rose,
+  .ambient-orb-purple,
+  .ambient-orb-azure,
+  .ambient-radar-sweep,
+  .ambient-mesh-grid {
+    display: none !important;
+  }
+
+  .ambient-orb-cyan,
+  .ambient-orb-indigo {
+    width: 260px;
+    height: 260px;
+    filter: blur(32px);
+    opacity: 0.35;
+  }
+
+  /* 2. Giảm tải backdrop-filter khi cuộn trên trình duyệt điện thoại */
+  .app-header,
+  .app-footer {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--bg-surface) !important;
+  }
+
+  /* 3. Tối ưu khung nội dung sát lề hợp lý hơn */
+  .content {
+    padding: 12px 10px 36px !important;
+  }
+}
