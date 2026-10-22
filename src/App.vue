@@ -1,267 +1,73 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  BellOutlined,
-  GlobalOutlined,
-  WarningFilled,
-  LogoutOutlined,
-  LoginOutlined,
-  ExclamationCircleOutlined,
-  CrownFilled,
-  EyeOutlined,
-} from '@ant-design/icons-vue'
 import { useTheme } from './composables/useTheme'
-import { useI18n } from './composables/useI18n'
 import { useAuth } from './composables/useAuth'
+import { getGeminiKey, setGeminiKey } from './utils/aiHelper'
 
 const route = useRoute()
 const router = useRouter()
 const { theme, toggleTheme } = useTheme()
-const { locale, setLocale, t } = useI18n()
-const { user, isAuthenticated, isAuthReady, userInitials, isAdmin, logout } = useAuth()
-
-const notificationOpen = ref(false)
-const showLogoutModal = ref(false)
-const isLoggingOut = ref(false)
+const { user, isAuthenticated, isAuthReady, isAdmin, logout } = useAuth()
 
 const isLoginPage = computed(() => route.name === 'login')
+const showKeyModal = ref(false)
+const geminiKeyInput = ref(getGeminiKey())
 
-const langOptions = [
-  { value: 'vi', label: '🇻🇳 Tiếng Việt' },
-  { value: 'en', label: '🇬🇧 English' },
-  { value: 'zh', label: '🇨🇳 中文' },
-]
-
-function handleLogout() {
-  showLogoutModal.value = true
+function saveKey() {
+  setGeminiKey(geminiKeyInput.value)
+  showKeyModal.value = false
 }
 
-async function confirmLogout() {
-  try {
-    isLoggingOut.value = true
-    await logout()
-    showLogoutModal.value = false
-    router.push({ name: 'login' })
-  } finally {
-    isLoggingOut.value = false
-  }
+async function handleLogout() {
+  if (!confirm('Bạn có chắc muốn đăng xuất?')) return
+  await logout()
+  router.push({ name: 'login' })
 }
-
 </script>
 
 <template>
-  <!-- Màn hình chờ an toàn bảo vệ không nháy giao diện khi kiểm tra auth -->
-  <div v-if="!isAuthReady" class="app-auth-splash">
-    <div class="splash-center-box">
-      <div class="splash-icon-pulse">
-        <WarningFilled />
-      </div>
-      <div class="splash-brand-text">
-        <strong>Sentinel</strong>
-        <span>Khởi tạo hệ thống bảo mật...</span>
-      </div>
-    </div>
+  <div v-if="!isAuthReady" style="min-height: 100vh; display: grid; place-items: center;">
+    <strong>⏳ Đang khởi tạo Sentinel IPQC...</strong>
   </div>
-
-  <div v-else class="app-shell">
-    <!-- Ambient Animated Dynamic Background (Hoạt ảnh động nền đỉnh cao 60fps) -->
-    <div v-if="!isLoginPage" class="app-ambient-backdrop" aria-hidden="true">
-      <!-- 7 Glowing Nebula Orbs (Đa tầng ánh sáng chuyển động huyền ảo) -->
-      <div class="ambient-orb ambient-orb-cyan"></div>
-      <div class="ambient-orb ambient-orb-indigo"></div>
-      <div class="ambient-orb ambient-orb-emerald"></div>
-      <div class="ambient-orb ambient-orb-amber"></div>
-      <div class="ambient-orb ambient-orb-rose"></div>
-      <div class="ambient-orb ambient-orb-purple"></div>
-      <div class="ambient-orb ambient-orb-azure"></div>
-
-      <!-- Cyber Mesh Grid Overlay -->
-      <div class="ambient-mesh-grid"></div>
-
-      <!-- Sentinel Radar Holographic Scan Sweep -->
-      <div class="ambient-radar-sweep"></div>
-
-    </div>
-
-    <!-- Topbar dedicated to Sentinel Anomaly Reporting (ẩn khi ở trang Login) -->
-    <header v-if="!isLoginPage" class="app-header">
-      <div class="header-left">
-        <div class="brand" @click="router.push('/reports')">
-          <div class="brand-mark"><WarningFilled /></div>
-          <div class="brand-copy">
-            <strong>Sentinel</strong>
-            <span>{{ t('brandSub') }}</span>
-          </div>
-        </div>
-
-        <div class="header-divider"></div>
-
-        <div class="header-badge">
-          <div class="status-dot"></div>
-          <span>{{ t('systemStatus') }}</span>
+  <div v-else>
+    <header v-if="!isLoginPage" class="lite-header">
+      <div class="lite-brand" @click="router.push('/reports')">
+        <div class="lite-logo">QC</div>
+        <div>
+          <strong style="font-size: 15px; display: block;">SENTINEL LITE</strong>
         </div>
       </div>
-
-      <div class="header-right">
-        <!-- Language Switcher -->
-        <a-select
-          :value="locale"
-          class="lang-select"
-          :dropdown-match-select-width="false"
-          @change="setLocale"
-        >
-          <template #suffixIcon><GlobalOutlined /></template>
-          <a-select-option
-            v-for="opt in langOptions"
-            :key="opt.value"
-            :value="opt.value"
-          >
-            {{ opt.label }}
-          </a-select-option>
-        </a-select>
-
-        <!-- Theme Toggle Button (Light/Dark) -->
-        <button
-          type="button"
-          class="header-icon-btn theme-btn"
-          :title="theme === 'dark' ? t('themeDark') : t('themeLight')"
-          @click="toggleTheme"
-        >
-          <span v-if="theme === 'dark'" class="theme-icon">☀️</span>
-          <span v-else class="theme-icon">🌙</span>
-        </button>
-
-        <!-- Notification button with wrapper -->
-        <div class="notification-wrapper">
-          <button
-            type="button"
-            class="header-icon-btn notification-btn"
-            :title="t('notifications')"
-            @click="notificationOpen = !notificationOpen"
-          >
-            <BellOutlined class="notification-icon" />
-            <span class="notification-badge-dot"></span>
-          </button>
-
-          <div v-if="notificationOpen" class="notification-popover">
-            <strong>{{ t('notifications') }}</strong>
-            <p>{{ t('notificationsDesc') }}</p>
-          </div>
-        </div>
-
-        <!-- Role Badge (Admin / Viewer) tách hẳn ra ngoài thành nút riêng trên header -->
-        <a-tooltip v-if="isAuthenticated && user" :title="isAdmin ? t('roleAdmin') : t('roleViewer')">
-          <div
-            class="header-icon-btn header-role-badge"
-            :class="isAdmin ? 'role-crown-badge' : 'role-viewer-badge'"
-          >
-            <CrownFilled v-if="isAdmin" />
-            <EyeOutlined v-else />
-          </div>
-        </a-tooltip>
-
-        <!-- User Profile & Logout -->
-        <div v-if="isAuthenticated && user" class="profile">
-          <img
-            v-if="user.photoURL"
-            :src="user.photoURL"
-            :alt="user.displayName"
-            class="avatar user-photo"
-          />
-          <div v-else class="avatar">{{ userInitials }}</div>
-          <div class="profile-copy">
-            <strong>{{ user.displayName || user.email }}</strong>
-            <span class="profile-email">{{ user.email }}</span>
-          </div>
-
-          <!-- Nút đăng xuất -->
-          <button
-            type="button"
-            class="header-logout-btn"
-            :title="t('logout')"
-            @click="handleLogout"
-          >
-            <LogoutOutlined />
-          </button>
-        </div>
-
-        <!-- Nút Đăng nhập nếu chưa xác thực -->
-        <button
-          v-else
-          type="button"
-          class="header-login-btn"
-          @click="router.push({ name: 'login' })"
-        >
-          <LoginOutlined />
-          <span>{{ t('login') || 'Đăng nhập' }}</span>
-        </button>
+      <div class="lite-header-actions">
+        <button type="button" class="lite-btn" @click="showKeyModal = true">🔑 AI Key</button>
+        <button type="button" class="lite-btn" @click="toggleTheme">{{ theme === 'dark' ? '☀️' : '🌙' }}</button>
+        <template v-if="isAuthenticated && user">
+          <span class="lite-pill" :class="isAdmin ? 'high' : 'medium'">{{ isAdmin ? '👑 Admin' : '👁️ Viewer' }}</span>
+          <button type="button" class="lite-btn lite-btn-danger" @click="handleLogout">Thoát</button>
+        </template>
       </div>
     </header>
+    <main><router-view /></main>
 
-    <!-- Main Content Area (cho các trang Dashboard / Reports bên trong) -->
-    <main v-if="!isLoginPage" class="content">
-      <router-view v-slot="{ Component }">
-        <transition name="page" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
-    </main>
-
-    <!-- Màn hình Đăng nhập hiển thị tràn viền 100vw toàn màn hình -->
-    <div v-else class="auth-viewport-wrapper">
-      <router-view />
-    </div>
-
-    <!-- Professional Enterprise Footer -->
-    <footer v-if="!isLoginPage" class="app-footer">
-      <div class="footer-inner">
-        <div class="footer-left">
-          <div class="footer-branding">
-            <span class="footer-status-dot"></span>
-            <span class="footer-brand-title">Sentinel Incident Ops</span>
-            <span class="footer-badge">QC Enterprise</span>
+    <Teleport to="body">
+      <div v-if="showKeyModal" class="lite-modal-backdrop" @click.self="showKeyModal = false">
+        <div class="lite-modal-card" style="max-width: 420px;">
+          <div class="lite-modal-header">
+            <h3>🔑 Cấu hình Gemini API Key</h3>
+            <button class="lite-close-btn" @click="showKeyModal = false">✕</button>
           </div>
-          <p class="footer-copyright-text">
-            {{ t('footerCopyright') }}
-          </p>
-        </div>
-
-        <div class="footer-right">
-          <div class="footer-meta-row">
-            <span class="footer-build-tag">v2.4.2 Production</span>
-            <span class="footer-sep">·</span>
-            <span class="footer-author-tag">{{ t('footerAuthor') }}</span>
+          <div class="lite-modal-body">
+            <div class="lite-field">
+              <label>Nhập Gemini API Key (để dịch câu tiếng Việt bất kỳ sang 3 ngôn ngữ):</label>
+              <input v-model="geminiKeyInput" type="password" class="lite-input" placeholder="AIzaSy..." />
+            </div>
           </div>
-          <p class="footer-tagline">
-            {{ t('footerSystemTag') }}
-          </p>
+          <div class="lite-modal-footer">
+            <button class="lite-btn" @click="showKeyModal = false">Đóng</button>
+            <button class="lite-btn lite-btn-primary" @click="saveKey">Lưu Key</button>
+          </div>
         </div>
       </div>
-    </footer>
-
-    <!-- Modal Xác nhận Đăng xuất (Ant Design Vue) -->
-    <a-modal
-      v-model:open="showLogoutModal"
-      :title="t('logout')"
-      :ok-text="t('logout')"
-      :cancel-text="t('btnCancel')"
-      ok-type="danger"
-      :confirm-loading="isLoggingOut"
-      class="logout-modal"
-      width="440px"
-      centered
-      @ok="confirmLogout"
-    >
-      <div class="logout-modal-body">
-        <div class="logout-icon-wrapper">
-          <ExclamationCircleOutlined />
-        </div>
-        <div class="logout-modal-info">
-          <div class="logout-modal-title">{{ t('logoutConfirm') }}</div>
-        </div>
-      </div>
-    </a-modal>
+    </Teleport>
   </div>
 </template>
-

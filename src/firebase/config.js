@@ -10,7 +10,6 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 }
 
 export const isFirebaseConfigured = Boolean(
@@ -21,11 +20,7 @@ export const isFirebaseConfigured = Boolean(
 
 export const isStorageEnabled = import.meta.env.VITE_ENABLE_FIREBASE_STORAGE === 'true'
 
-let app = null
-let auth = null
-let db = null
-let storage = null
-let googleProvider = null
+let app = null, auth = null, db = null, storage = null, googleProvider = null
 
 if (isFirebaseConfigured) {
   try {
@@ -34,16 +29,10 @@ if (isFirebaseConfigured) {
     db = getFirestore(app)
     storage = getStorage(app)
     googleProvider = new GoogleAuthProvider()
-    googleProvider.setCustomParameters({
-      prompt: 'select_account',
-    })
+    googleProvider.setCustomParameters({ prompt: 'select_account' })
   } catch (error) {
-    console.error('Lỗi khi khởi tạo Firebase:', error)
+    console.error('Lỗi khởi tạo Firebase:', error)
   }
-} else {
-  console.warn(
-    '[Sentinel] Firebase chưa được cấu hình đầy đủ trong file .env. Hệ thống đang chạy ở chế độ Demo / Fallback an toàn.'
-  )
 }
 
 export { app, auth, db, storage, googleProvider, firebaseConfig }

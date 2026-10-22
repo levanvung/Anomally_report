@@ -2,44 +2,20 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { getCurrentUser } from '../composables/useAuth'
 
 const routes = [
-  {
-    path: '/',
-    redirect: '/reports',
-  },
+  { path: '/', redirect: '/reports' },
   {
     path: '/login',
     name: 'login',
     component: () => import('../views/LoginView.vue'),
-    meta: { title: 'Đăng nhập', guestOnly: true },
+    meta: { guestOnly: true },
   },
   {
     path: '/reports',
     name: 'reports',
     component: () => import('../views/ReportsView.vue'),
-    meta: { title: 'Báo cáo bất thường', requiresAuth: true },
+    meta: { requiresAuth: true },
   },
-  {
-    path: '/dashboard',
-    name: 'dashboard',
-    component: () => import('../views/DashboardView.vue'),
-    meta: { title: 'Tổng quan hệ thống', requiresAuth: true },
-  },
-  {
-    path: '/team',
-    name: 'team',
-    component: () => import('../views/TeamView.vue'),
-    meta: { title: 'Đội ngũ trực ban', requiresAuth: true },
-  },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('../views/SettingsView.vue'),
-    meta: { title: 'Cài đặt hệ thống', requiresAuth: true },
-  },
-  {
-    path: '/:pathMatch(.*)*',
-    redirect: '/reports',
-  },
+  { path: '/:pathMatch(.*)*', redirect: '/reports' },
 ]
 
 const router = createRouter({
@@ -48,14 +24,10 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  document.title = `Sentinel · ${to.meta.title || 'Báo cáo bất thường'}`
-
   const currentUser = await getCurrentUser()
-  const isAuthenticated = Boolean(currentUser)
-
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    next({ name: 'login', query: { redirect: to.fullPath } })
-  } else if (to.meta.guestOnly && isAuthenticated) {
+  if (to.meta.requiresAuth && !currentUser) {
+    next({ name: 'login' })
+  } else if (to.meta.guestOnly && currentUser) {
     next({ name: 'reports' })
   } else {
     next()
@@ -63,4 +35,3 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
-

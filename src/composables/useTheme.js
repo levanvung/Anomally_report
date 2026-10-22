@@ -1,38 +1,21 @@
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 
-const THEME_STORAGE_KEY = 'sentinel_theme'
+const THEME_KEY = 'sentinel_theme_mode'
+const theme = ref(localStorage.getItem(THEME_KEY) || 'dark')
 
-// Initial state from localStorage or system preference
-const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
-const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-const currentTheme = ref(savedTheme || (prefersDark ? 'dark' : 'dark'))
-
-function applyTheme(themeName) {
-  document.documentElement.setAttribute('data-theme', themeName)
-  document.body.setAttribute('data-theme', themeName)
-  localStorage.setItem(THEME_STORAGE_KEY, themeName)
+function applyTheme(val) {
+  document.documentElement.setAttribute('data-theme', val)
 }
+applyTheme(theme.value)
+
+watch(theme, (val) => {
+  localStorage.setItem(THEME_KEY, val)
+  applyTheme(val)
+})
 
 export function useTheme() {
   function toggleTheme() {
-    currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark'
-    applyTheme(currentTheme.value)
+    theme.value = theme.value === 'dark' ? 'light' : 'dark'
   }
-
-  function setTheme(themeName) {
-    if (themeName === 'light' || themeName === 'dark') {
-      currentTheme.value = themeName
-      applyTheme(themeName)
-    }
-  }
-
-  // Initialize on load
-  applyTheme(currentTheme.value)
-
-  return {
-    theme: currentTheme,
-    isDark: () => currentTheme.value === 'dark',
-    toggleTheme,
-    setTheme,
-  }
+  return { theme, toggleTheme }
 }
