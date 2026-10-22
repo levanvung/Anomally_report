@@ -343,26 +343,78 @@ export function useReports() {
     }
   }
 
-  async function batchImportReports(list) {
+async function batchImportReports(list) {
     if (!list?.length) return
     isImportingReports.value = true
     try {
       if (isFirebaseConfigured && db) {
-        const BATCH_SIZE = 300
-        for (let i = 0; i < list.length; i += BATCH_SIZE) {
-          const chunk = list.slice(i, i + BATCH_SIZE)
-          const batch = writeBatch(db)
-          chunk.forEach((item, idx) => {
-            const isoDate = toSortableISODate(item.date)
-            batch.set(doc(collection(db, 'manufacturing_reports')), {
-              ...item,
-              date: isoDate,
-              orderIndex: i + idx,
-              createdAtTimestamp: serverTimestamp(),
-            })
-          })
-          const pct = 50 + Math.round(((i + chunk.length) / list.length) * 50)
-          showLoading(`Đang lưu vào cơ sở dữ liệu (${i + chunk.length}/${list.length})...`, 'Vui lòng không đóng trình duyệt', pct)
+        // Giới hạn an toàn cho mỗi lần commit: Tối đa 20 dòng HOẶC tổng dung lượng < 2MB (tránh lỗi 18MB của Firestore)
+        const MAX_DOCS_PER_BATCH = 20
+        const MAX_BATCH_BYTES = 2 * 1024 * 1024 // 2 MB
+        const MAX_SINGLE_DOC_BYTES = 850 * 1024 // 850 KB (Giới hạn 1 document của Firestore là 1MB)
+
+        let batch = writeBatch(db)
+        let currentBatchDocs = 0
+        let currentBatchBytes = 0
+
+        for (let i = 0; i < list.length; i++) {
+          const item = list[i]
+          const isoDate = toSortableISODate(item.date)
+
+          // Đảm bảo 1 dòng có nhiều ảnh không vượt quá giới hạn 1MB/document của Firestore
+          let safeImages = Array.isArray(item.images) ? [...item.images] : []
+          let primaryUrl = item.imageUrl || safeImages[0]?.url || ''
+
+          const docPayload = {
+            ...item,
+            date: isoDate,
+            images: safeImages,
+            imageUrl: primaryUrl,
+            orderIndex: i,
+            createdAtTimestamp: serverTimestamp(),
+          }
+
+          let estimatedBytes = JSON.stringify(docPayload).length
+
+          // Nếu 1 dòng có quá nhiều ảnh nặng > 850KB, chỉ giữ lại 1 ảnh chính để không bị lỗi
+          if (estimatedBytes > MAX_SINGLE_DOC_BYTES && safeImages.length > 1) {
+            docPayload.images = [safeImages[0]]
+            estimatedBytes = JSON.stringify(docPayload).length
+          }
+          if (estimatedBytes > MAX_SINGLE_DOC_BYTES) {
+            docPayload.images = []
+            estimatedBytes = JSON.stringify(docPayload).length
+          }
+
+          // Nếu cộng thêm dòng này mà vượt quá 2MB hoặc quá 20 dòng -> Gửi (commit) lô hiện tại ngay
+          if (
+            currentBatchDocs > 0 &&
+            (currentBatchDocs >= MAX_DOCS_PER_BATCH || currentBatchBytes + estimatedBytes > MAX_BATCH_BYTES)
+          ) {
+            const pct = 50 + Math.round((i / list.length) * 50)
+            showLoading(
+              `Đang lưu vào cơ sở dữ liệu (${i}/${list.length})...`,
+              `Đang đồng bộ gói dữ liệu an toàn (${(currentBatchBytes / 1024 / 1024).toFixed(1)} MB)...`,
+              pct
+            )
+            await batch.commit()
+            batch = writeBatch(db)
+            currentBatchDocs = 0
+            currentBatchBytes = 0
+          }
+
+          batch.set(doc(collection(db, 'manufacturing_reports')), docPayload)
+          currentBatchDocs++
+          currentBatchBytes += estimatedBytes
+        }
+
+        // Commit những dòng cuối cùng còn lại trong lô
+        if (currentBatchDocs > 0) {
+          showLoading(
+            `Đang hoàn tất lưu (${list.length}/${list.length})...`,
+            'Đang ghi gói dữ liệu cuối cùng...',
+            98
+          )
           await batch.commit()
         }
       } else {
