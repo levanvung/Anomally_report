@@ -8,7 +8,97 @@ function calculateDefectRate(defectQty, totalQty) {
   return q <= 0 ? '0.00%' : ((d / q) * 100).toFixed(2) + '%'
 }
 
-export async function extractImagesFromExcelZip(fileOrBuffer) {
+/**
+ * Chuẩn hoá ngày tháng từ ô Excel hoặc từ tên Sheet (VD: "ISP3144AF-1A DIP (04-09-2026)")
+ * Trả về định dạng chuẩn YYYY-MM-DD để sắp xếp chính xác từ trên xuống dưới
+ */
+export function normalizeExcelDate(rawDate, sheetName = '') {
+  const parseStrToISO = (str) => {
+    if (!str) return ''
+    const s = String(str).trim()
+    // YYYY-MM-DD hoặc YYYY/MM/DD
+    const mISO = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/)
+    if (mISO) {
+      return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`
+    }
+    // DD/MM/YYYY hoặc DD-MM-YYYY
+    const mDMY = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
+    if (mDMY) {
+      let dd = parseInt(mDMY[1], 10)
+      let mm = parseInt(mDMY[2], 10)
+      const yyyy = mDMY[3]
+      if (mm > 12 && dd <= 12) {
+        const tmp = dd; dd = mm; mm = tmp
+      }
+      return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+    }
+    return ''
+  }
+
+  // 1. Nếu là số serial ngày của Excel (VD: 46269)
+  if (typeof rawDate === 'number' && rawDate > 20000 && rawDate < 90000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30))
+    const dt = new Date(excelEpoch.getTime() + Math.round(rawDate * 86400000))
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getUTCFullYear()
+      const m = String(dt.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(dt.getUTCDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+  }
+
+  // 2. Nếu là đối tượng Date
+  if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
+    const y = rawDate.getFullYear()
+    const m = String(rawDate.getMonth() + 1).padStart(2, '0')
+    const d = String(rawDate.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  // 3. Nếu là chuỗi ngày trong ô Excel
+  const fromCell = parseStrToISO(rawDate)
+  if (fromCell) return fromCell
+
+  // 4. Fallback thông minh: Lấy ngày tháng ghi trong tên Sheet (VD: "ISP3144AF-1A DIP (04-09-2026)")
+  const fromSheet = parseStrToISO(sheetName)
+  if (fromSheet) return fromSheet
+
+  return new Date().toISOString().split('T')[0]
+}
+
+/**
+ * Chuẩn hoá tên Công đoạn (Process) - Khắc phục triệt để lỗi "DIP HAND INSERT COMPONENT"
+ * bị nhận nhầm thành AVR do chữ "COMPONENT" có chứa "MP" ở giữa!
+ */
+export function normalizeProcessName(procVal = '', sheetName = '', respVal = '') {
+  const p = String(procVal || '').trim().toUpperCase()
+  const s = String(sheetName || '').trim().toUpperCase()
+  const r = String(respVal || '').trim().toUpperCase()
+
+  // 1. Kiểm tra chính xác từ cột Process (Cột C) trước
+  if (p.includes('DIP') || p.includes('HAND INSERT')) return 'DIP'
+  if (p.includes('SMT')) return 'SMT'
+  if (/\bAI\b/.test(p) || p.includes('AUTO INSERT')) return 'AI'
+  if (p.includes('AVR') || /\bMP\b/.test(p) || p.includes('FINAL') || p.includes('ASSEMBLY') || p.includes('ABSEMBLY')) {
+    return 'AVR'
+  }
+
+  // 2. Nếu cột Process không rõ, đối chiếu cột Người chịu trách nhiệm (VD: Production-DIP)
+  if (r.includes('DIP')) return 'DIP'
+  if (r.includes('SMT')) return 'SMT'
+  if (/\bAI\b/.test(r) || r.includes('-AI')) return 'AI'
+  if (r.includes('AVR') || /\bMP\b/.test(r)) return 'AVR'
+
+  // 3. Đối chiếu tên Sheet (VD: "ISP3144AF-1A DIP (04-09-2026)")
+  if (/\bDIP\b/.test(s)) return 'DIP'
+  if (/\bSMT\b/.test(s)) return 'SMT'
+  if (/\bAI\b/.test(s)) return 'AI'
+  if (/\bAVR\b/.test(s) || /\bMP\b/.test(s)) return 'AVR'
+
+  return 'DIP'
+}
+
+export async function extractImagesFromExcelZip(fileOrBuffer, onProgress = null) {
   try {
     const zip = await JSZip.loadAsync(fileOrBuffer)
     const wbXmlFile = zip.file('xl/workbook.xml')
@@ -42,7 +132,14 @@ export async function extractImagesFromExcelZip(fileOrBuffer) {
     }
 
     const sheetImagesMap = {}
-    for (const [sheetName, sheetRelPath] of Object.entries(sheetNameToPath)) {
+    const entries = Object.entries(sheetNameToPath)
+    for (let idx = 0; idx < entries.length; idx++) {
+      const [sheetName, sheetRelPath] = entries[idx]
+      if (typeof onProgress === 'function') {
+        const pct = 10 + Math.round(((idx + 1) / entries.length) * 35)
+        onProgress(`Đang trích xuất ảnh từ Sheet (${idx + 1}/${entries.length}): ${sheetName}`, pct)
+      }
+
       const sheetFileName = sheetRelPath.split('/').pop()
       const sheetRelsFile = zip.file(`xl/worksheets/_rels/${sheetFileName}.rels`)
       if (!sheetRelsFile) continue
@@ -96,26 +193,33 @@ export function exportReportsToExcel(reports = [], customFilename = '') {
     'Progress/进度 Tiến độ', 'Note/备注 Ghi chú'
   ]
 
-  const dataRows = reports.map((r, idx) => [
-    idx + 1,
-    r.date || '',
-    r.process || '',
-    r.productModel || '',
-    r.machine || '',
-    Number(r.quantity) || 0,
-    Number(r.defectQuantity) || 0,
-    r.defectRate || calculateDefectRate(r.defectQuantity, r.quantity),
-    r.responsiblePerson || '',
-    r.assignee || '',
-    (r.images?.length || r.imageUrl) ? '[Có ảnh]' : '',
-    r.defectDescription || '',
-    r.causes || '',
-    r.improvementMeasures || '',
-    '',
-    '',
-    r.status === 'resolved' ? '- Done - 已完成 - Đã hoàn thành' : '- Open - 未处理 - Chưa xử lý',
-    r.progressNote || ''
-  ])
+  const dataRows = reports.map((r, idx) => {
+    let dispDate = r.date || ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dispDate)) {
+      const [y, m, d] = dispDate.split('-')
+      dispDate = `${d}/${m}/${y}`
+    }
+    return [
+      idx + 1,
+      dispDate,
+      r.process || '',
+      r.productModel || '',
+      r.machine || '',
+      Number(r.quantity) || 0,
+      Number(r.defectQuantity) || 0,
+      r.defectRate || calculateDefectRate(r.defectQuantity, r.quantity),
+      r.responsiblePerson || '',
+      r.assignee || '',
+      (r.images?.length || r.imageUrl) ? '[Có ảnh]' : '',
+      r.defectDescription || '',
+      r.causes || '',
+      r.improvementMeasures || '',
+      '',
+      '',
+      r.status === 'resolved' ? '- Done - 已完成 - Đã hoàn thành' : '- Open - 未处理 - Chưa xử lý',
+      r.progressNote || ''
+    ]
+  })
 
   const ws = XLSX.utils.aoa_to_sheet([headerRow1, [], [], headerRow4, ...dataRows])
   const wb = XLSX.utils.book_new()
@@ -125,50 +229,90 @@ export function exportReportsToExcel(reports = [], customFilename = '') {
   return { count: reports.length, filename: fname }
 }
 
-export async function parseExcelReportFile(file) {
+export async function parseExcelReportFile(file, onProgress = null) {
+  if (typeof onProgress === 'function') onProgress('Đang đọc cấu trúc file Excel...', 5)
   const arrayBuffer = await file.arrayBuffer()
   const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-  const sheetImagesMap = await extractImagesFromExcelZip(arrayBuffer)
+  const sheetImagesMap = await extractImagesFromExcelZip(arrayBuffer, onProgress)
   const allRecords = []
 
-  for (const sName of (workbook.SheetNames || [])) {
+  const sheetNames = workbook.SheetNames || []
+  for (let sIdx = 0; sIdx < sheetNames.length; sIdx++) {
+    const sName = sheetNames[sIdx]
     const ws = workbook.Sheets[sName]
     const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
     if (!rawData || rawData.length < 5) continue
 
-    for (let rIdx = 4; rIdx < rawData.length; rIdx++) {
+    // Tự động dò dòng Header (mặc định là dòng index 3 = dòng 4 trong Excel)
+    let headerRowIdx = 3
+    for (let i = 0; i < Math.min(8, rawData.length); i++) {
+      const rowStr = (rawData[i] || []).join(' ').toLowerCase()
+      if ((rowStr.includes('date') || rowStr.includes('ngày')) && (rowStr.includes('process') || rowStr.includes('model'))) {
+        headerRowIdx = i
+        break
+      }
+    }
+
+    for (let rIdx = headerRowIdx + 1; rIdx < rawData.length; rIdx++) {
       const row = rawData[rIdx]
       if (!row || !row.some(Boolean)) continue
-      const modelVal = String(row[3] || '').trim()
-      const descVal = String(row[11] || '').trim()
+      const rawDate = row[1]
       const procVal = String(row[2] || '').trim()
-      if (!modelVal && !descVal && !procVal) continue
+      const modelVal = String(row[3] || '').trim()
+      const machineVal = String(row[4] || '').trim()
+      const respVal = String(row[8] || '').trim()
+      const picVal = String(row[9] || '').trim()
+      const descVal = String(row[11] || '').trim()
 
-      const qty = parseInt(row[5], 10) || 100
-      const defQty = parseInt(row[6], 10) || 0
       const rowImgs = sheetImagesMap[sName]?.[rIdx] || []
-      let normProc = 'DIP'
-      if (procVal.toUpperCase().includes('SMT')) normProc = 'SMT'
-      else if (procVal.toUpperCase().includes('AI')) normProc = 'AI'
-      else if (procVal.toUpperCase().includes('AVR') || procVal.toUpperCase().includes('MP')) normProc = 'AVR'
+      if (!modelVal && !descVal && !procVal && rowImgs.length === 0) continue
+
+      const qty = Math.max(0, parseInt(row[5], 10) || 0)
+      const defQty = Math.max(0, parseInt(row[6], 10) || 0)
+
+      let defectRate = ''
+      if (row[7] !== '' && row[7] !== null && row[7] !== undefined) {
+        const rawRate = row[7]
+        if (typeof rawRate === 'number') {
+          defectRate = (rawRate <= 1 ? rawRate * 100 : rawRate).toFixed(2) + '%'
+        } else {
+          defectRate = String(rawRate).trim()
+        }
+      } else {
+        defectRate = calculateDefectRate(defQty, qty)
+      }
+
+      // Chuẩn hoá Công đoạn chính xác (Không bao giờ nhầm DIP HAND INSERT COMPONENT sang AVR)
+      const normProc = normalizeProcessName(procVal, sName, respVal)
+      // Chuẩn hoá Ngày tháng thực tế từ ô Excel hoặc từ tên Sheet
+      const dateISO = normalizeExcelDate(rawDate, sName)
+
+      const progressRaw = String(row[16] || '').toLowerCase()
+      let status = 'resolved'
+      if (progressRaw.includes('open') || progressRaw.includes('chưa')) status = 'open'
+      else if (progressRaw.includes('progress') || progressRaw.includes('đang')) status = 'investigating'
 
       allRecords.push({
         id: 'ANOM-' + Math.floor(1000 + Math.random() * 9000),
-        date: new Date().toISOString().split('T')[0],
+        date: dateISO,
         process: normProc,
+        processRaw: procVal || normProc,
         productModel: modelVal || sName.split('(')[0].trim() || 'MODEL',
-        machine: String(row[4] || '').trim(),
+        machine: machineVal === '+' ? '' : machineVal,
         quantity: qty,
         defectQuantity: defQty,
-        defectRate: calculateDefectRate(defQty, qty),
-        responsiblePerson: String(row[8] || 'Production-' + normProc).trim(),
-        assignee: String(row[9] || 'Production-' + normProc).trim(),
-        defectDescription: descVal || 'Lỗi IPQC',
+        defectRate,
+        responsiblePerson: respVal || ('Production-' + normProc),
+        assignee: picVal || respVal || ('Production-' + normProc),
+        defectDescription: descVal || 'Lỗi phát hiện trong quá trình kiểm tra IPQC',
+        causes: String(row[12] || '').trim(),
+        improvementMeasures: String(row[13] || '').trim(),
         progressNote: String(row[17] || '').trim(),
-        status: 'resolved',
-        severity: 'low',
+        status,
+        severity: parseFloat(defectRate) >= 10 ? 'critical' : (parseFloat(defectRate) >= 5 ? 'high' : 'low'),
         images: rowImgs,
         imageUrl: rowImgs[0]?.url || '',
+        orderIndex: allRecords.length,
       })
     }
   }

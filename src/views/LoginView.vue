@@ -38,7 +38,7 @@ async function onGoogle() {
           <input v-model="form.password" type="password" required class="lite-input" placeholder="••••••••" />
         </div>
         <button type="submit" class="lite-btn lite-btn-primary" style="width: 100%; padding: 10px;" :disabled="isLoading">
-          {{ isLoading ? 'Đang đăng nhập...' : 'Đăng nhập' }}
+          {{ isLoading ? '⏳ Đang đăng nhập...' : 'Đăng nhập' }}
         </button>
       </form>
 

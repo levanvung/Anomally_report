@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
-  useReports, getDefectRateLevel, getPrimaryReportImage, getReportImageCount, commonProcesses
+  useReports, getDefectRateLevel, getPrimaryReportImage, getReportImageCount,
+  commonProcesses, formatDisplayDate, showLoading, hideLoading, showToast
 } from '../composables/useReports'
 import { useAuth } from '../composables/useAuth'
 import { exportReportsToExcel, parseExcelReportFile } from '../utils/excelService'
@@ -9,6 +10,7 @@ import { DEFECT_PRESETS, translateViToTrilingual } from '../utils/aiHelper'
 
 const { isAdmin, canCreate, canEdit, canDelete } = useAuth()
 const {
+  isFirestoreLoading, isPageSwitching, dateSortOrder, toggleDateSort,
   searchText, statusFilter, processFilter, dateRange, activeStat, currentPage, pageSize,
   isModalOpen, isEditing, isSaving, showDeleteModal, reportToDelete, isDeleting,
   cancelDelete, executeDelete, isDetailOpen, selectedReport, form, existingImages, selectedFiles,
@@ -45,23 +47,41 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredReports.value.length / pageSize)))
 
-function handleExportExcel() {
+async function handleExportExcel() {
   const list = filteredReports.value.length ? filteredReports.value : reports.value
   if (!list.length) return alert('Không có dữ liệu để xuất!')
-  exportReportsToExcel(list)
+
+  showLoading('📊 Đang xuất file Excel (.xlsx)...', `Đang đóng gói ${list.length} bản ghi báo cáo IPQC...`, 65)
+  await new Promise(r => setTimeout(r, 250))
+  try {
+    const res = exportReportsToExcel(list)
+    showToast(`✅ Đã xuất ${res.count} dòng ra file ${res.filename}!`)
+  } finally {
+    hideLoading()
+  }
 }
 
 async function onExcelFileSelected(e) {
   const file = e.target.files?.[0]
   e.target.value = ''
   if (!file) return
+
+  showLoading(`📂 Đang đọc file "${file.name}"...`, 'Đang phân tích các Sheet và trích xuất ảnh lỗi...', 10)
+  await new Promise(r => setTimeout(r, 60))
+
   try {
-    const records = await parseExcelReportFile(file)
-    if (!records.length) return alert('Không tìm thấy dòng dữ liệu hợp lệ trong file Excel!')
+    const records = await parseExcelReportFile(file, (msg, pct) => {
+      showLoading(msg, 'Vui lòng đợi trong giây lát...', pct)
+    })
+    if (!records.length) {
+      hideLoading()
+      return alert('Không tìm thấy dòng dữ liệu hợp lệ trong file Excel!')
+    }
     await batchImportReports(records)
-    alert(`Đã nhập thành công ${records.length} báo cáo từ file Excel!`)
   } catch (err) {
     alert('Lỗi đọc file Excel: ' + err.message)
+  } finally {
+    hideLoading()
   }
 }
 
@@ -78,6 +98,7 @@ async function handleTranslateDefectDesc() {
     form.defectDescription = await translateViToTrilingual(form.defectDescription, {
       process: form.process, model: form.productModel
     })
+    showToast('🌐 Đã dịch sang 3 ngôn ngữ (Anh - Trung - Việt)!')
   } catch (err) {
     alert(err.message)
   } finally {
@@ -88,7 +109,7 @@ async function handleTranslateDefectDesc() {
 
 <template>
   <div class="lite-container">
-    <!-- 4 THẺ CÔNG ĐOẠN -->
+    <!-- 4 THẺ CÔNG ĐOẠN (SMT, AI, DIP, AVR) -->
     <div v-memo="[processStats, processFilter]" class="lite-stats-grid">
       <div class="lite-stat-card" :class="{ active: processFilter === 'SMT' }" @click="toggleProcessFilter('SMT')">
         <div class="lite-stat-head"><span>⚙️ SMT</span><span>{{ processStats.smtPercent }}%</span></div>
@@ -144,6 +165,9 @@ async function handleTranslateDefectDesc() {
           </select>
           <input v-model="dateFrom" type="date" class="lite-input" style="width:auto" @change="onDateChange" />
           <input v-model="dateTo" type="date" class="lite-input" style="width:auto" @change="onDateChange" />
+          <button type="button" class="lite-btn" title="Đổi thứ tự sắp xếp theo ngày" @click="toggleDateSort">
+            📅 Ngày: {{ dateSortOrder === 'desc' ? 'Mới → Cũ ↓' : 'Cũ → Mới ↑' }}
+          </button>
           <button type="button" class="lite-btn" @click="handleResetAll">🔄 Xoá lọc</button>
         </template>
       </div>
@@ -154,8 +178,14 @@ async function handleTranslateDefectDesc() {
       </div>
     </div>
 
-    <!-- DANH SÁCH BÁO CÁO -->
+    <!-- DANH SÁCH BÁO CÁO (CÓ HIỆU ỨNG LOADING KHI PHÂN TRANG / TẢI DỮ LIỆU) -->
     <div class="lite-table-card">
+      <!-- Lớp phủ Loading khi chuyển trang hoặc đang tải dữ liệu từ Firestore -->
+      <div v-if="isFirestoreLoading || isPageSwitching" class="lite-table-loading-mask">
+        <div class="lite-spinner-sm"></div>
+        <span>{{ isFirestoreLoading ? 'Đang đồng bộ dữ liệu báo cáo...' : 'Đang chuyển trang...' }}</span>
+      </div>
+
       <div class="lite-table-toolbar">
         <strong>📋 Báo cáo Bất thường ({{ filteredReports.length }})</strong>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -171,14 +201,28 @@ async function handleTranslateDefectDesc() {
         <table class="lite-table">
           <thead>
             <tr>
-              <th>#</th><th>Ngày</th><th>Công đoạn</th><th>Model</th><th>Máy</th><th>SL</th><th>Lỗi</th><th>Tỷ lệ</th><th>Ảnh</th><th>Mô tả lỗi</th><th>Chịu TN</th><th>Trạng thái</th><th>Thao tác</th>
+              <th>#</th>
+              <th style="cursor: pointer; color: var(--accent);" title="Nhấn để đảo thứ tự sắp xếp Ngày" @click="toggleDateSort">
+                Ngày {{ dateSortOrder === 'desc' ? '↓' : '↑' }}
+              </th>
+              <th>Công đoạn</th>
+              <th>Model</th>
+              <th>Máy</th>
+              <th>SL</th>
+              <th>Lỗi</th>
+              <th>Tỷ lệ</th>
+              <th>Ảnh</th>
+              <th>Mô tả lỗi</th>
+              <th>Chịu TN</th>
+              <th>Trạng thái</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(r, idx) in pagedReports" :key="r.id">
               <td>{{ (currentPage - 1) * pageSize + idx + 1 }}</td>
-              <td>{{ r.date }}</td>
-              <td><strong>{{ r.process }}</strong></td>
+              <td style="white-space: nowrap; font-weight: 600;">{{ formatDisplayDate(r.date) }}</td>
+              <td><span class="lite-pill medium">{{ r.process }}</span></td>
               <td><strong style="color:var(--accent); cursor:pointer" @click="openDetail(r)">{{ r.productModel }}</strong></td>
               <td>{{ r.machine || '—' }}</td>
               <td>{{ Number(r.quantity || 0).toLocaleString() }}</td>
@@ -215,7 +259,7 @@ async function handleTranslateDefectDesc() {
             <img v-if="getReportImageCount(r) > 0" :src="getPrimaryReportImage(r)" class="lite-mcard-img" loading="lazy" />
             <div style="flex:1; min-width:0">
               <div class="lite-mcard-desc">{{ r.defectDescription }}</div>
-              <div style="font-size:11px; color:var(--text-sub)">📅 {{ r.date }} · 👤 {{ r.responsiblePerson }}</div>
+              <div style="font-size:11px; color:var(--text-sub)">📅 {{ formatDisplayDate(r.date) }} · 👤 {{ r.responsiblePerson }}</div>
             </div>
           </div>
           <div class="lite-mcard-metrics">
@@ -236,10 +280,10 @@ async function handleTranslateDefectDesc() {
 
       <!-- PHÂN TRANG -->
       <div class="lite-table-toolbar" style="border-top:1px solid var(--border-strong); border-bottom:none">
-        <span style="font-size:12px; color:var(--text-sub)">Trang {{ currentPage }} / {{ totalPages }}</span>
+        <span style="font-size:12px; color:var(--text-sub)">Trang {{ currentPage }} / {{ totalPages }} (Tổng {{ filteredReports.length }} dòng)</span>
         <div style="display:flex; gap:6px">
-          <button class="lite-btn" :disabled="currentPage <= 1" @click="changePage(currentPage - 1)">← Trước</button>
-          <button class="lite-btn" :disabled="currentPage >= totalPages" @click="changePage(currentPage + 1)">Sau →</button>
+          <button class="lite-btn" :disabled="currentPage <= 1 || isPageSwitching" @click="changePage(currentPage - 1)">← Trang trước</button>
+          <button class="lite-btn" :disabled="currentPage >= totalPages || isPageSwitching" @click="changePage(currentPage + 1)">Trang sau →</button>
         </div>
       </div>
     </div>
@@ -249,7 +293,7 @@ async function handleTranslateDefectDesc() {
       <div v-if="isDetailOpen && selectedReport" class="lite-modal-backdrop" @click.self="closeDetail">
         <div class="lite-modal-card">
           <div class="lite-modal-header">
-            <h3>📌 {{ selectedReport.productModel }} · {{ selectedReport.process }}</h3>
+            <h3>📌 {{ selectedReport.productModel }} · {{ selectedReport.process }} ({{ formatDisplayDate(selectedReport.date) }})</h3>
             <button class="lite-close-btn" @click="closeDetail">✕</button>
           </div>
           <div class="lite-modal-body">
@@ -332,7 +376,7 @@ async function handleTranslateDefectDesc() {
           </div>
           <div class="lite-modal-footer">
             <button class="lite-btn" @click="isModalOpen = false">Hủy</button>
-            <button class="lite-btn lite-btn-primary" :disabled="isSaving" @click="saveReport">{{ isSaving ? 'Đang lưu...' : '💾 Lưu Báo cáo' }}</button>
+            <button class="lite-btn lite-btn-primary" :disabled="isSaving" @click="saveReport">{{ isSaving ? '⏳ Đang lưu...' : '💾 Lưu Báo cáo' }}</button>
           </div>
         </div>
       </div>

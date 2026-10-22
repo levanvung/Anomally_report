@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from './composables/useTheme'
 import { useAuth } from './composables/useAuth'
 import { getGeminiKey, setGeminiKey } from './utils/aiHelper'
+import { globalLoading, toasts, showToast } from './composables/useReports'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +18,7 @@ const geminiKeyInput = ref(getGeminiKey())
 function saveKey() {
   setGeminiKey(geminiKeyInput.value)
   showKeyModal.value = false
+  showToast('🔑 Đã lưu Gemini API Key!')
 }
 
 async function handleLogout() {
@@ -27,8 +29,33 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div v-if="!isAuthReady" style="min-height: 100vh; display: grid; place-items: center;">
-    <strong>⏳ Đang khởi tạo Sentinel IPQC...</strong>
+  <!-- GLOBAL LOADING MODAL (Hiển thị khi Import Excel, Xuất Excel, Lưu dữ liệu) -->
+  <Teleport to="body">
+    <div v-if="globalLoading.active" class="lite-modal-backdrop" style="z-index: 300;">
+      <div class="lite-modal-card" style="max-width: 380px; padding: 24px; text-align: center; align-items: center;">
+        <div class="lite-spinner"></div>
+        <h3 style="font-size: 15px; margin-bottom: 4px;">{{ globalLoading.title }}</h3>
+        <p style="font-size: 12.5px; color: var(--text-sub);">{{ globalLoading.subtext }}</p>
+        <div v-if="globalLoading.percent !== null" class="lite-progress-track">
+          <div class="lite-progress-fill" :style="{ width: globalLoading.percent + '%' }"></div>
+        </div>
+        <span v-if="globalLoading.percent !== null" style="font-size: 11.5px; font-weight: 700; color: var(--accent); margin-top: 6px;">
+          {{ globalLoading.percent }}%
+        </span>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- TOAST THÔNG BÁO GÓC PHẢI -->
+  <div class="lite-toast-container">
+    <div v-for="t in toasts" :key="t.id" class="lite-toast-item">
+      {{ t.text }}
+    </div>
+  </div>
+
+  <div v-if="!isAuthReady" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+    <div class="lite-spinner"></div>
+    <strong>Đang khởi tạo Sentinel IPQC...</strong>
   </div>
   <div v-else>
     <header v-if="!isLoginPage" class="lite-header">
