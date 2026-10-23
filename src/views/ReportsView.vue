@@ -18,7 +18,7 @@ const {
   getReportImages, onQuantityOrDefectChange, filteredReports, pagedReports, stats, processStats,
   toggleProcessFilter, filterByStat, reports, resetFilters, openCreate, openEdit, openDetail,
   closeDetail, saveReport, removeReport, batchImportReports, changePage, statusLabels, statusClass,
-  isFirestoreLoading, isPageSwitching, isDetailImagesLoading, detailHdImages,
+    isDetailImagesLoading, detailHdImages,
   dateSortOrder, toggleDateSort,
 } = useReports()
 
