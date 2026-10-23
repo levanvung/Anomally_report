@@ -19,7 +19,7 @@ const {
   toggleProcessFilter, filterByStat, reports, resetFilters, openCreate, openEdit, openDetail,
   closeDetail, saveReport, removeReport, batchImportReports, changePage, statusLabels, statusClass,
     isDetailImagesLoading, detailHdImages,
-  dateSortOrder, toggleDateSort,
+   
 } = useReports()
 
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
