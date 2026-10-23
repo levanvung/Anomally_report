@@ -5,7 +5,6 @@ import {
   getDoc,
   getDocs,
   setDoc,
-  updateDoc,
   deleteDoc,
   query,
   orderBy,
@@ -602,10 +601,14 @@ export function useReports() {
       if (wasEditing && editingId.value) {
         const targetId = editingId.value
         if (isFirebaseConfigured && db) {
-          await updateDoc(doc(db, REPORTS_COLLECTION, targetId), {
-            ...payload,
-            updatedAt: serverTimestamp(),
-          })
+          await setDoc(
+            doc(db, REPORTS_COLLECTION, targetId),
+            {
+              ...payload,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          )
           const imgBatch = writeBatch(db)
           finalImages.forEach((img, idx) => {
             imgBatch.set(doc(db, IMAGES_COLLECTION, `${targetId}_${idx}`), {
