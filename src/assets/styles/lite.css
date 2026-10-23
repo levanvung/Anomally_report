@@ -149,3 +149,267 @@ body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg-main); 
   .lite-modal-backdrop { padding: 0; align-items: flex-end; }
   .lite-modal-card { border-radius: 16px 16px 0 0; max-height: 94vh; }
 }
+/* ─── HUY HIỆU ĐỒNG BỘ NGẦM & THANH PHÂN TRANG ─── */
+.lite-bg-sync-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.lite-filter-expand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lite-toolbar-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lite-pagination-bar {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-strong);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-card);
+}
+
+.lite-stat-num small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-sub);
+}
+
+.lite-stat-meta .err-num {
+  color: #f87171;
+}
+
+/* ─── GIAO DIỆN MOBILE HIỆN ĐẠI (< 768px) ─── */
+@media (max-width: 768px) {
+  .lite-header {
+    height: 50px;
+    padding: 0 10px;
+  }
+
+  .lite-container {
+    padding: 10px 8px 80px;
+  }
+
+  /* 4 thẻ SMT, AI, DIP, AVR xếp lưới 2x2 cực gọn */
+  .lite-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .lite-stat-card {
+    padding: 9px 10px;
+    border-radius: 10px;
+  }
+
+  .lite-stat-num {
+    font-size: 18px;
+    line-height: 1.15;
+  }
+
+  .lite-stat-meta {
+    margin-top: 5px;
+    padding-top: 5px;
+    font-size: 10.5px;
+  }
+
+  /* Bộ lọc mở rộng chia 2 cột đều nhau trên Mobile */
+  .lite-filter-expand {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border-strong);
+  }
+
+  .lite-table-toolbar {
+    padding: 10px 12px;
+  }
+
+  .lite-toolbar-btns {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .lite-toolbar-btns .lite-btn {
+    padding: 7px 6px;
+    font-size: 11.5px;
+  }
+
+  /* Thẻ Báo Cáo Mobile (Card View) */
+  .lite-mobile-list {
+    padding: 8px;
+    gap: 10px;
+  }
+
+  .lite-mcard {
+    padding: 11px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  }
+
+  .lite-mcard-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .lite-mcard-index {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-sub);
+  }
+
+  .lite-mcard-model {
+    font-size: 13.5px;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lite-mcard-img-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .lite-mcard-img {
+    width: 68px;
+    height: 68px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--border-strong);
+  }
+
+  .lite-mcard-img-count {
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .lite-mcard-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .lite-mcard-desc {
+    font-size: 12px;
+    line-height: 1.38;
+    margin-bottom: 5px;
+    -webkit-line-clamp: 3;
+  }
+
+  .lite-mcard-submeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-sub);
+  }
+
+  .lite-mcard-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px 8px;
+    margin: 8px 0;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+  }
+
+  .m-metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 10px;
+    color: var(--text-sub);
+  }
+
+  .m-metric strong {
+    font-size: 12px;
+    color: var(--text-main);
+    margin-top: 1px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 3 nút bấm dưới đáy Card Mobile đều nhau, dễ chạm bằng ngón tay */
+  .lite-mcard-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .lite-m-btn {
+    padding: 7px 6px;
+    border-radius: 7px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-main);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  .lite-m-btn.edit {
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.3);
+  }
+
+  .lite-m-btn.danger {
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  /* Nút tròn nổi (+) góc phải dưới màn hình điện thoại */
+  .lite-mobile-fab {
+    position: fixed;
+    right: 16px;
+    bottom: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    font-size: 26px;
+    font-weight: 700;
+    box-shadow: 0 6px 20px rgba(14, 165, 233, 0.5);
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+}
