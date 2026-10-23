@@ -297,3 +297,149 @@ body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg-main); 
     font-size: 10.5px !important;
   }
 }
+/* ==========================================================================
+   FIX CHI TIẾT THẺ BÁO CÁO MOBILE (TÁCH DÒNG SL, NÚT CHI TIẾT & MÔ TẢ 3 NGÔN NGỮ)
+   ========================================================================== */
+
+/* 1. Tạo khoảng cách thoáng giữa #1, nhãn DIP và tên Model */
+.lite-mcard-title-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+.lite-mcard-index {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: #94a3b8 !important;
+}
+
+.lite-mcard-model {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  color: #38bdf8 !important;
+  letter-spacing: 0.2px !important;
+}
+
+/* 2. Hiển thị đủ cả 3 dòng ngôn ngữ (Anh - Trung - Việt) bên cạnh ảnh */
+.lite-mcard-desc {
+  font-size: 12px !important;
+  line-height: 1.42 !important;
+  color: var(--text-main) !important;
+  white-space: pre-line !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 5 !important; /* Nâng lên 5 dòng để thấy cả tiếng Trung & Việt */
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  margin-bottom: 6px !important;
+}
+
+.lite-mcard-submeta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  font-size: 11.5px !important;
+  color: #94a3b8 !important;
+  font-weight: 500 !important;
+}
+
+/* 3. Tách nhãn (SL Kiểm, SL Lỗi, Chịu TN) lên dòng trên và giá trị xuống dòng dưới */
+.lite-mcard-metrics {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+  background: rgba(15, 23, 42, 0.75) !important;
+  border: 1px solid var(--border-strong) !important;
+  padding: 8px 6px !important;
+  border-radius: 10px !important;
+  margin: 10px 0 !important;
+}
+
+[data-theme="light"] .lite-mcard-metrics {
+  background: #f8fafc !important;
+}
+
+.lite-mcard-metrics .m-metric {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  text-align: center !important;
+  min-width: 0 !important;
+}
+
+.lite-mcard-metrics .m-metric span {
+  display: block !important;
+  font-size: 10.5px !important;
+  color: var(--text-sub) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+}
+
+.lite-mcard-metrics .m-metric strong {
+  display: block !important;
+  font-size: 12.5px !important;
+  font-weight: 800 !important;
+  color: var(--text-main) !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* 4. Làm đẹp nút "👁️ Chi tiết", "✏️ Sửa", "🗑️ Xoá" (Bỏ nền trắng mặc định) */
+.lite-mcard-actions {
+  display: flex !important;
+  gap: 8px !important;
+  padding-top: 8px !important;
+  border-top: 1px solid var(--border) !important;
+}
+
+.lite-m-btn {
+  flex: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--border-strong) !important;
+  background: var(--bg-elevated) !important;
+  color: var(--text-main) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.lite-m-btn:hover {
+  border-color: var(--accent) !important;
+}
+
+.lite-m-btn.edit {
+  background: rgba(14, 165, 233, 0.12) !important;
+  border-color: rgba(14, 165, 233, 0.35) !important;
+  color: #38bdf8 !important;
+}
+
+.lite-m-btn.danger {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+  color: #f87171 !important;
+}
+
+/* Đảm bảo nút Xuất Excel trên thanh công cụ gọn gàng cùng hàng */
+.lite-table-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+.lite-toolbar-btns {
+  display: flex !important;
+  gap: 6px !important;
+  width: auto !important;
+}
