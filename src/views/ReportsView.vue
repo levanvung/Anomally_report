@@ -18,6 +18,8 @@ const {
   getReportImages, onQuantityOrDefectChange, filteredReports, pagedReports, stats, processStats,
   toggleProcessFilter, filterByStat, reports, resetFilters, openCreate, openEdit, openDetail,
   closeDetail, saveReport, removeReport, batchImportReports, changePage, statusLabels, statusClass,
+  isFirestoreLoading, isPageSwitching, isDetailImagesLoading, detailHdImages,
+  dateSortOrder, toggleDateSort,
 } = useReports()
 
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
@@ -300,8 +302,22 @@ async function handleTranslateDefectDesc() {
             <div style="background:var(--bg-elevated); padding:12px; border-radius:8px; white-space:pre-line; margin-bottom:12px;">
               {{ selectedReport.defectDescription }}
             </div>
-            <div v-if="getReportImages(selectedReport).length" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px;">
-              <img v-for="(img, i) in getReportImages(selectedReport)" :key="i" :src="img.url" style="width:100%; height:120px; object-fit:cover; border-radius:8px; cursor:zoom-in" @click="lightboxUrl = img.url" />
+
+            <!-- Trạng thái đang tải ảnh HD -->
+            <div v-if="isDetailImagesLoading" style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--accent); margin-bottom:8px;">
+              <div class="lite-spinner-sm" style="width:18px; height:18px; border-width:2px;"></div>
+              <span>Đang tải ảnh gốc HD sắc nét...</span>
+            </div>
+
+            <div v-if="detailHdImages.length" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px;">
+              <img
+                v-for="(img, i) in detailHdImages"
+                :key="i"
+                :src="img.url"
+                style="width:100%; height:140px; object-fit:cover; border-radius:8px; cursor:zoom-in; border:1px solid var(--border-strong);"
+                title="Nhấp để phóng to ảnh HD"
+                @click="lightboxUrl = img.url"
+              />
             </div>
           </div>
           <div class="lite-modal-footer">

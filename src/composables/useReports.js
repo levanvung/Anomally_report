@@ -1,14 +1,20 @@
 import { computed, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, writeBatch
+  collection, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, writeBatch
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../firebase/config.js'
 import { useAuth } from './useAuth.js'
-import { compressImage, formatFileSize } from '../utils/imageCompressor.js'
+import { compressImage, createThumbnailBase64, formatFileSize } from '../utils/imageCompressor.js'
 import { normalizeProcessName, normalizeExcelDate } from '../utils/excelService.js'
 
 export { formatFileSize }
 export const commonProcesses = ['SMT', 'AI', 'DIP', 'AVR']
+
+const REPORTS_COLLECTION = 'manufacturing_reports'
+const IMAGES_COLLECTION = 'manufacturing_report_images'
+
+// Bộ nhớ đệm RAM lưu các ảnh HD đã tải để bấm xem lần 2 không cần tải lại từ mạng
+const hdImagesCache = new Map()
 
 // Trạng thái Loading Toàn Cục & Toast Thông Báo
 export const globalLoading = reactive({
@@ -54,7 +60,6 @@ export function getDefectRateLevel(rateStrOrNum) {
   return { label: 'Ổn định (<1%)', severity: 'low' }
 }
 
-// Chuyển mọi định dạng ngày về chuẩn YYYY-MM-DD để sắp xếp theo ngày từ trên xuống dưới
 export function toSortableISODate(val) {
   if (!val) return '0000-00-00'
   const s = String(val).trim()
@@ -66,7 +71,6 @@ export function toSortableISODate(val) {
   return normalizeExcelDate(s) || '0000-00-00'
 }
 
-// Hiển thị ngày dạng DD/MM/YYYY thân thiện trên bảng
 export function formatDisplayDate(val) {
   const iso = toSortableISODate(val)
   if (!iso || iso === '0000-00-00') return val || '—'
@@ -76,34 +80,90 @@ export function formatDisplayDate(val) {
 
 export function getReportImages(report) {
   if (!report) return []
-  if (Array.isArray(report.images) && report.images.length > 0) {
-    return report.images.map((img, i) => typeof img === 'string' ? { url: img, name: `Ảnh ${i+1}` } : img).filter(i => i.url)
+  if (hdImagesCache.has(report.id)) {
+    return hdImagesCache.get(report.id)
   }
-  return report.imageUrl ? [{ url: report.imageUrl, name: 'Ảnh lỗi' }] : []
+  if (Array.isArray(report.images) && report.images.length > 0) {
+    return report.images
+      .map((img, i) => (typeof img === 'string' ? { url: img, name: `Ảnh ${i + 1}` } : img))
+      .filter(i => i.url)
+  }
+  const fallbackUrl = report.imageUrl || report.thumbnailUrl
+  return fallbackUrl ? [{ url: fallbackUrl, name: 'Ảnh lỗi' }] : []
 }
 
+// Ngoài bảng danh sách: Luôn ưu tiên lấy Thumbnail siêu nhẹ (~5KB) để cuộn bảng mượt 60fps
 export function getPrimaryReportImage(report) {
+  if (!report) return ''
+  if (report.thumbnailUrl) return report.thumbnailUrl
+  if (report.imageUrl) return report.imageUrl
   const imgs = getReportImages(report)
   return imgs[0]?.url || ''
 }
 
 export function getReportImageCount(report) {
+  if (!report) return 0
+  if (typeof report.imageCount === 'number') return report.imageCount
   return getReportImages(report).length
+}
+
+// Hàm tải ảnh gốc HD từ bảng phụ manufacturing_report_images khi người dùng bấm Xem / Sửa
+async function fetchHdImagesForReport(report) {
+  if (!report || !report.id) return []
+  if (hdImagesCache.has(report.id)) {
+    return hdImagesCache.get(report.id)
+  }
+
+  // Tương thích ngược: Nếu báo cáo cũ đã lưu sẵn mảng ảnh trong bảng chính
+  if (!report.hasExternalImages && Array.isArray(report.images) && report.images.length > 0) {
+    const legacy = getReportImages(report)
+    hdImagesCache.set(report.id, legacy)
+    return legacy
+  }
+
+  const count = Number(report.imageCount) || 0
+  if (!isFirebaseConfigured || !db || count <= 0) {
+    return getReportImages(report)
+  }
+
+  try {
+    const promises = []
+    for (let i = 0; i < count; i++) {
+      promises.push(getDoc(doc(db, IMAGES_COLLECTION, `${report.id}_${i}`)))
+    }
+    const snaps = await Promise.all(promises)
+    const loaded = []
+    snaps.forEach((snap, idx) => {
+      if (snap.exists()) {
+        const d = snap.data()
+        if (d.url) loaded.push({ url: d.url, name: d.name || `Ảnh HD ${idx + 1}` })
+      }
+    })
+
+    if (loaded.length > 0) {
+      hdImagesCache.set(report.id, loaded)
+      return loaded
+    }
+  } catch (err) {
+    console.warn('Không thể tải ảnh HD từ bảng phụ, dùng ảnh dự phòng:', err)
+  }
+  return getReportImages(report)
 }
 
 const reports = shallowRef([])
 const isFirestoreLoading = ref(false)
 const isImportingReports = ref(false)
 const isPageSwitching = ref(false)
-const dateSortOrder = ref('desc') // 'desc' = Mới nhất -> Cũ nhất, 'asc' = Cũ nhất -> Mới nhất
+const isDetailImagesLoading = ref(false)
+const detailHdImages = ref([])
+const dateSortOrder = ref('desc')
 
 if (isFirebaseConfigured && db) {
   isFirestoreLoading.value = true
-  onSnapshot(collection(db, 'manufacturing_reports'), (snap) => {
+  onSnapshot(collection(db, REPORTS_COLLECTION), (snap) => {
     if (isImportingReports.value) return
     const list = snap.docs.map((d, idx) => {
       const data = d.data()
-      // Tự động sửa lại cả các bản ghi DIP cũ trên Firestore từng bị nhầm sang AVR (do có Responsible là Production-DIP)
       const fixedProcess = normalizeProcessName(data.processRaw || data.process, data.sheetSource, data.responsiblePerson)
       return {
         id: d.id,
@@ -200,7 +260,6 @@ export function useReports() {
     }
   })
 
-  // Lọc và Sắp xếp dữ liệu theo Ngày từ trên xuống dưới
   const filteredReports = computed(() => {
     const kw = (debouncedSearch.value || '').toLowerCase().trim()
     const filtered = reports.value.filter((r) => {
@@ -223,9 +282,7 @@ export function useReports() {
     return filtered.slice().sort((a, b) => {
       const da = a._sortDate || toSortableISODate(a.date)
       const db = b._sortDate || toSortableISODate(b.date)
-      if (da !== db) {
-        return da > db ? dir : -dir
-      }
+      if (da !== db) return da > db ? dir : -dir
       return ((a._orderIdx || 0) - (b._orderIdx || 0))
     })
   })
@@ -253,7 +310,8 @@ export function useReports() {
       if (!file.type.startsWith('image/')) continue
       const item = reactive({ id: Date.now() + Math.random(), previewUrl: URL.createObjectURL(file), base64: '', name: file.name })
       selectedFiles.value.push(item)
-      compressImage(file, 1100, 1100, 0.75).then(res => { item.base64 = res.base64 })
+      // Nén chuẩn WebP HD 1440px sắc nét
+      compressImage(file, 1440, 1440, 0.85).then(res => { item.base64 = res.base64 })
     }
   }
 
@@ -269,25 +327,59 @@ export function useReports() {
     isModalOpen.value = true
   }
 
-  function openEdit(r) {
+  async function openEdit(r) {
     Object.assign(form, emptyForm(), r)
-    existingImages.value = [...getReportImages(r)]
     selectedFiles.value = []
     editingId.value = r.id
     isEditing.value = true
     isDetailOpen.value = false
     isModalOpen.value = true
+
+    // Tải ảnh HD của báo cáo này để chỉnh sửa
+    isDetailImagesLoading.value = true
+    existingImages.value = [...getReportImages(r)]
+    try {
+      const hdList = await fetchHdImagesForReport(r)
+      existingImages.value = [...hdList]
+    } finally {
+      isDetailImagesLoading.value = false
+    }
   }
 
-  function openDetail(r) { selectedReport.value = r; isDetailOpen.value = true }
-  function closeDetail() { isDetailOpen.value = false; selectedReport.value = null }
+  async function openDetail(r) {
+    selectedReport.value = r
+    // Hiển thị tức thì ảnh thumbnail trong lúc tải ảnh HD
+    detailHdImages.value = getReportImages(r)
+    isDetailOpen.value = true
 
+    if (r.hasExternalImages || getReportImageCount(r) > 0) {
+      isDetailImagesLoading.value = true
+      try {
+        detailHdImages.value = await fetchHdImagesForReport(r)
+      } finally {
+        isDetailImagesLoading.value = false
+      }
+    }
+  }
+
+  function closeDetail() {
+    isDetailOpen.value = false
+    selectedReport.value = null
+    detailHdImages.value = []
+  }
+
+  // Lưu báo cáo: Chỉ lưu Thumbnail (~5KB) vào bảng chính, đẩy toàn bộ ảnh HD sang bảng phụ
   async function saveReport() {
     isSaving.value = true
-    showLoading('Đang lưu báo cáo...', 'Đang đồng bộ hình ảnh và dữ liệu lên hệ thống...')
+    showLoading('Đang lưu báo cáo...', 'Đang tạo Thumbnail & lưu ảnh HD sắc nét...')
     try {
       const uploaded = selectedFiles.value.map(i => ({ url: i.base64 || i.previewUrl, name: i.name }))
-      const finalImages = [...existingImages.value, ...uploaded]
+      const finalImages = [...existingImages.value, ...uploaded].filter(i => i && i.url)
+
+      const thumbUrl = finalImages.length > 0
+        ? await createThumbnailBase64(finalImages[0].url, 180, 0.68)
+        : ''
+
       const isoDate = toSortableISODate(form.date)
       const payload = {
         ...form,
@@ -296,24 +388,55 @@ export function useReports() {
         quantity: Number(form.quantity) || 0,
         defectQuantity: Number(form.defectQuantity) || 0,
         defectRate: calculateDefectRate(form.defectQuantity, form.quantity),
-        images: finalImages,
-        imageUrl: finalImages[0]?.url || '',
+        thumbnailUrl: thumbUrl,
+        imageUrl: thumbUrl,
+        imageCount: finalImages.length,
+        hasExternalImages: finalImages.length > 0,
+        images: [], // Giữ bảng chính nhẹ tuyệt đối
         creator: user.value?.displayName || user.value?.email || 'Admin',
       }
 
       if (isEditing.value && editingId.value) {
+        const targetId = editingId.value
         if (isFirebaseConfigured && db) {
-          await updateDoc(doc(db, 'manufacturing_reports', editingId.value), { ...payload, updatedAt: serverTimestamp() })
+          await updateDoc(doc(db, REPORTS_COLLECTION, targetId), { ...payload, updatedAt: serverTimestamp() })
+          const imgBatch = writeBatch(db)
+          finalImages.forEach((img, idx) => {
+            imgBatch.set(doc(db, IMAGES_COLLECTION, `${targetId}_${idx}`), {
+              reportId: targetId,
+              index: idx,
+              url: img.url,
+              name: img.name || `Ảnh HD ${idx + 1}`,
+            })
+          })
+          await imgBatch.commit()
         } else {
-          const idx = reports.value.findIndex(x => x.id === editingId.value)
+          const idx = reports.value.findIndex(x => x.id === targetId)
           if (idx !== -1) { reports.value[idx] = { ...reports.value[idx], ...payload }; triggerRef(reports) }
         }
-        showToast('✅ Đã cập nhật báo cáo thành công!')
+        hdImagesCache.set(targetId, finalImages)
+        showToast('✅ Đã cập nhật báo cáo & ảnh HD thành công!')
       } else {
         if (isFirebaseConfigured && db) {
-          await addDoc(collection(db, 'manufacturing_reports'), { ...payload, createdAtTimestamp: serverTimestamp() })
+          const newDocRef = doc(collection(db, REPORTS_COLLECTION))
+          await setDoc(newDocRef, { ...payload, createdAtTimestamp: serverTimestamp() })
+          if (finalImages.length > 0) {
+            const imgBatch = writeBatch(db)
+            finalImages.forEach((img, idx) => {
+              imgBatch.set(doc(db, IMAGES_COLLECTION, `${newDocRef.id}_${idx}`), {
+                reportId: newDocRef.id,
+                index: idx,
+                url: img.url,
+                name: img.name || `Ảnh HD ${idx + 1}`,
+              })
+            })
+            await imgBatch.commit()
+          }
+          hdImagesCache.set(newDocRef.id, finalImages)
         } else {
-          reports.value = [{ id: 'ANOM-' + Date.now().toString().slice(-4), ...payload }, ...reports.value]
+          const localId = 'ANOM-' + Date.now().toString().slice(-4)
+          hdImagesCache.set(localId, finalImages)
+          reports.value = [{ id: localId, ...payload }, ...reports.value]
         }
         showToast('✅ Đã tạo báo cáo mới thành công!')
       }
@@ -332,8 +455,18 @@ export function useReports() {
     isDeleting.value = true
     showLoading('Đang xoá báo cáo...', reportToDelete.value.productModel)
     try {
-      const id = reportToDelete.value.id
-      if (isFirebaseConfigured && db) await deleteDoc(doc(db, 'manufacturing_reports', id))
+      const target = reportToDelete.value
+      const id = target.id
+      if (isFirebaseConfigured && db) {
+        const batch = writeBatch(db)
+        batch.delete(doc(db, REPORTS_COLLECTION, id))
+        const count = Number(target.imageCount) || 0
+        for (let i = 0; i < count; i++) {
+          batch.delete(doc(db, IMAGES_COLLECTION, `${id}_${i}`))
+        }
+        await batch.commit()
+      }
+      hdImagesCache.delete(id)
       reports.value = reports.value.filter(x => x.id !== id)
       showDeleteModal.value = false
       showToast('🗑️ Đã xoá báo cáo!')
@@ -343,78 +476,89 @@ export function useReports() {
     }
   }
 
-async function batchImportReports(list) {
+  // Import Excel: Tự động tách Thumbnail (~5KB) vào bảng chính & lưu từng ảnh HD sang bảng phụ
+  async function batchImportReports(list) {
     if (!list?.length) return
     isImportingReports.value = true
     try {
       if (isFirebaseConfigured && db) {
-        // Giới hạn an toàn cho mỗi lần commit: Tối đa 20 dòng HOẶC tổng dung lượng < 2MB (tránh lỗi 18MB của Firestore)
-        const MAX_DOCS_PER_BATCH = 20
-        const MAX_BATCH_BYTES = 2 * 1024 * 1024 // 2 MB
-        const MAX_SINGLE_DOC_BYTES = 850 * 1024 // 850 KB (Giới hạn 1 document của Firestore là 1MB)
+        const MAX_OPS_PER_BATCH = 25
+        const MAX_BATCH_BYTES = 2 * 1024 * 1024 // 2 MB an toàn tuyệt đối
 
         let batch = writeBatch(db)
-        let currentBatchDocs = 0
-        let currentBatchBytes = 0
+        let currentOps = 0
+        let currentBytes = 0
 
-        for (let i = 0; i < list.length; i++) {
-          const item = list[i]
-          const isoDate = toSortableISODate(item.date)
-
-          // Đảm bảo 1 dòng có nhiều ảnh không vượt quá giới hạn 1MB/document của Firestore
-          let safeImages = Array.isArray(item.images) ? [...item.images] : []
-          let primaryUrl = item.imageUrl || safeImages[0]?.url || ''
-
-          const docPayload = {
-            ...item,
-            date: isoDate,
-            images: safeImages,
-            imageUrl: primaryUrl,
-            orderIndex: i,
-            createdAtTimestamp: serverTimestamp(),
-          }
-
-          let estimatedBytes = JSON.stringify(docPayload).length
-
-          // Nếu 1 dòng có quá nhiều ảnh nặng > 850KB, chỉ giữ lại 1 ảnh chính để không bị lỗi
-          if (estimatedBytes > MAX_SINGLE_DOC_BYTES && safeImages.length > 1) {
-            docPayload.images = [safeImages[0]]
-            estimatedBytes = JSON.stringify(docPayload).length
-          }
-          if (estimatedBytes > MAX_SINGLE_DOC_BYTES) {
-            docPayload.images = []
-            estimatedBytes = JSON.stringify(docPayload).length
-          }
-
-          // Nếu cộng thêm dòng này mà vượt quá 2MB hoặc quá 20 dòng -> Gửi (commit) lô hiện tại ngay
-          if (
-            currentBatchDocs > 0 &&
-            (currentBatchDocs >= MAX_DOCS_PER_BATCH || currentBatchBytes + estimatedBytes > MAX_BATCH_BYTES)
-          ) {
-            const pct = 50 + Math.round((i / list.length) * 50)
+        const commitIfNeeded = async (extraOps, extraBytes, currentIdx) => {
+          if (currentOps > 0 && (currentOps + extraOps > MAX_OPS_PER_BATCH || currentBytes + extraBytes > MAX_BATCH_BYTES)) {
+            const pct = 50 + Math.round((currentIdx / list.length) * 48)
             showLoading(
-              `Đang lưu vào cơ sở dữ liệu (${i}/${list.length})...`,
-              `Đang đồng bộ gói dữ liệu an toàn (${(currentBatchBytes / 1024 / 1024).toFixed(1)} MB)...`,
+              `Đang đồng bộ ảnh HD & dữ liệu (${currentIdx}/${list.length})...`,
+              `Đang ghi gói dữ liệu (${(currentBytes / 1024 / 1024).toFixed(1)} MB)...`,
               pct
             )
             await batch.commit()
             batch = writeBatch(db)
-            currentBatchDocs = 0
-            currentBatchBytes = 0
+            currentOps = 0
+            currentBytes = 0
           }
-
-          batch.set(doc(collection(db, 'manufacturing_reports')), docPayload)
-          currentBatchDocs++
-          currentBatchBytes += estimatedBytes
         }
 
-        // Commit những dòng cuối cùng còn lại trong lô
-        if (currentBatchDocs > 0) {
-          showLoading(
-            `Đang hoàn tất lưu (${list.length}/${list.length})...`,
-            'Đang ghi gói dữ liệu cuối cùng...',
-            98
-          )
+        for (let i = 0; i < list.length; i++) {
+          const item = list[i]
+          const isoDate = toSortableISODate(item.date)
+          const rawImages = Array.isArray(item.images) ? item.images.filter(x => x && x.url) : []
+
+          // Tạo ảnh Thumbnail 180px (~5KB) cho bảng chính
+          const thumbUrl = rawImages.length > 0
+            ? await createThumbnailBase64(rawImages[0].url, 180, 0.68)
+            : ''
+
+          const reportRef = doc(collection(db, REPORTS_COLLECTION))
+          const reportPayload = {
+            ...item,
+            date: isoDate,
+            thumbnailUrl: thumbUrl,
+            imageUrl: thumbUrl,
+            imageCount: rawImages.length,
+            hasExternalImages: rawImages.length > 0,
+            images: [], // Không lưu mảng ảnh nặng vào bảng chính
+            orderIndex: i,
+            createdAtTimestamp: serverTimestamp(),
+          }
+
+          const repBytes = JSON.stringify(reportPayload).length
+          await commitIfNeeded(1, repBytes, i)
+          batch.set(reportRef, reportPayload)
+          currentOps++
+          currentBytes += repBytes
+
+          // Lưu từng bức ảnh HD thành 1 Document riêng trong bảng phụ manufacturing_report_images
+          for (let imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+            const imgDocPayload = {
+              reportId: reportRef.id,
+              index: imgIdx,
+              url: rawImages[imgIdx].url,
+              name: rawImages[imgIdx].name || `row_${i + 1}_img_${imgIdx + 1}.webp`,
+            }
+            const imgBytes = JSON.stringify(imgDocPayload).length
+            // Bỏ qua nếu 1 ảnh đơn lẻ vượt quá 950KB
+            if (imgBytes > 950 * 1024) continue
+
+            await commitIfNeeded(1, imgBytes, i)
+            const imgRef = doc(db, IMAGES_COLLECTION, `${reportRef.id}_${imgIdx}`)
+            batch.set(imgRef, imgDocPayload)
+            currentOps++
+            currentBytes += imgBytes
+          }
+
+          if (rawImages.length > 0) {
+            hdImagesCache.set(reportRef.id, rawImages)
+          }
+        }
+
+        if (currentOps > 0) {
+          showLoading(`Đang hoàn tất lưu (${list.length}/${list.length})...`, 'Đang đóng gói lô cuối...', 99)
           await batch.commit()
         }
       } else {
@@ -426,14 +570,15 @@ async function batchImportReports(list) {
         }))
         reports.value = [...enriched, ...reports.value]
       }
-      showToast(`✅ Đã nhập thành công ${list.length} báo cáo từ Excel!`)
+      showToast(`✅ Đã nhập thành công ${list.length} báo cáo kèm ảnh HD!`)
     } finally {
       isImportingReports.value = false
     }
   }
 
   return {
-    reports, isFirestoreLoading, isPageSwitching, dateSortOrder, toggleDateSort,
+    reports, isFirestoreLoading, isPageSwitching, isDetailImagesLoading, detailHdImages,
+    dateSortOrder, toggleDateSort,
     searchText, statusFilter, processFilter, dateRange, activeStat,
     currentPage, pageSize, isModalOpen, isEditing, isSaving, showDeleteModal, reportToDelete, isDeleting,
     cancelDelete, executeDelete, isDetailOpen, selectedReport, form, existingImages, selectedFiles,

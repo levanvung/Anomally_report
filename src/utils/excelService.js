@@ -126,8 +126,7 @@ export async function extractImagesFromExcelZip(fileOrBuffer, onProgress = null)
       const base64 = await mFile.async('base64')
       const ext = mediaPath.split('.').pop().toLowerCase()
       const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-      const optimized = await compressBase64Image(`data:${mime};base64,${base64}`, 520, 0.62)
-      mediaCache[mediaPath] = optimized
+      const optimized = await compressBase64Image(`data:${mime};base64,${base64}`, 1200, 0.82)      mediaCache[mediaPath] = optimized
       return optimized
     }
 
