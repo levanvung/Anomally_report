@@ -722,6 +722,7 @@ export function useReports() {
   }
 
   // IMPORT EXCEL AN TOÀN & CẬP NHẬT DANH SÁCH NGAY LẬP TỨC
+// IMPORT EXCEL: TỰ ĐỘNG XOÁ SẠCH BẢN GHI CŨ BỊ TRÙNG 3X & GIỮ ẢNH SẮC NÉT
   async function batchImportReports(list) {
     if (!list?.length) return
     isImportingReports.value = true
@@ -729,9 +730,30 @@ export function useReports() {
 
     try {
       if (isFirebaseConfigured && db) {
-        const MAX_OPS_PER_BATCH = 25
+        const MAX_OPS_PER_BATCH = 20
         const MAX_BATCH_BYTES = 2 * 1024 * 1024 // 2 MB
 
+        // 1. DỌN SẠCH DỮ LIỆU CŨ ĐANG BỊ TRÙNG LẶP TRÊN FIRESTORE TRƯỚC KHI GHI BỘ MỚI
+        showLoading('🧹 Đang dọn sạch dữ liệu cũ bị trùng lặp...', 'Đang chuẩn bị cơ sở dữ liệu sạch...', 42)
+        const existingSnap = await getDocs(collection(db, REPORTS_COLLECTION))
+        if (!existingSnap.empty) {
+          let delBatch = writeBatch(db)
+          let delCount = 0
+          for (const docSnap of existingSnap.docs) {
+            delBatch.delete(docSnap.ref)
+            delCount++
+            if (delCount >= 250) {
+              await delBatch.commit()
+              delBatch = writeBatch(db)
+              delCount = 0
+            }
+          }
+          if (delCount > 0) await delBatch.commit()
+        }
+        hdImagesCache.clear()
+        reports.value = []
+
+        // 2. GHI BỘ DỮ LIỆU MỚI VỚI ID CỐ ĐỊNH & ẢNH SẮC NÉT (THUMBNAIL 600PX + ẢNH GỐC HD 100%)
         let batch = writeBatch(db)
         let currentOps = 0
         let currentBytes = 0
@@ -744,7 +766,7 @@ export function useReports() {
           ) {
             const pct = 50 + Math.round((currentIdx / list.length) * 48)
             showLoading(
-              `Đang đồng bộ ảnh HD & dữ liệu (${currentIdx}/${list.length})...`,
+              `Đang đồng bộ ảnh gốc HD & dữ liệu (${currentIdx}/${list.length})...`,
               `Đang ghi gói dữ liệu (${(currentBytes / 1024 / 1024).toFixed(1)} MB)...`,
               pct
             )
@@ -762,14 +784,23 @@ export function useReports() {
             ? item.images.filter((x) => x && x.url)
             : []
 
-          const thumbUrl =
-            rawImages.length > 0
-              ? await createThumbnailBase64(rawImages[0].url, 180, 0.68)
-              : ''
+          // Nếu ảnh gốc nhẹ (< 180KB) thì giữ nguyên 100% ảnh gốc cho cả bảng chính để nhìn nét căng ngay trên thẻ!
+          // Nếu ảnh gốc nặng hơn thì tạo bản 600px (chất lượng 0.90) cực nét cho thẻ ngoài
+          let thumbUrl = ''
+          if (rawImages.length > 0) {
+            const firstUrl = rawImages[0].url
+            thumbUrl =
+              firstUrl.length < 180 * 1024
+                ? firstUrl
+                : await createThumbnailBase64(firstUrl, 600, 0.90)
+          }
 
-          const reportRef = doc(collection(db, REPORTS_COLLECTION))
+          // Dùng ID cố định (Deterministic ID) để không bao giờ bị nhân đôi/nhân ba
+          const docId = item.id || `EX_ROW_${i + 1}`
+          const reportRef = doc(db, REPORTS_COLLECTION, docId)
           const reportPayload = {
             ...item,
+            id: docId,
             date: isoDate,
             thumbnailUrl: thumbUrl,
             imageUrl: thumbUrl,
@@ -788,28 +819,28 @@ export function useReports() {
 
           for (let imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
             const imgDocPayload = {
-              reportId: reportRef.id,
+              reportId: docId,
               index: imgIdx,
-              url: rawImages[imgIdx].url,
-              name: rawImages[imgIdx].name || `row_${i + 1}_img_${imgIdx + 1}.webp`,
+              url: rawImages[imgIdx].url, // Ảnh gốc 100% không nén
+              name: rawImages[imgIdx].name || `row_${i + 1}_img_${imgIdx + 1}.jpg`,
             }
             const imgBytes = JSON.stringify(imgDocPayload).length
-            if (imgBytes > 950 * 1024) continue
+            if (imgBytes > 980 * 1024) continue
 
             await commitIfNeeded(1, imgBytes, i)
-            const imgRef = doc(db, IMAGES_COLLECTION, `${reportRef.id}_${imgIdx}`)
+            const imgRef = doc(db, IMAGES_COLLECTION, `${docId}_${imgIdx}`)
             batch.set(imgRef, imgDocPayload)
             currentOps++
             currentBytes += imgBytes
           }
 
           if (rawImages.length > 0) {
-            hdImagesCache.set(reportRef.id, rawImages)
+            hdImagesCache.set(docId, rawImages)
           }
 
           newlyImportedItems.push({
             ...reportPayload,
-            id: reportRef.id,
+            id: docId,
             _sortDate: isoDate,
             _orderIdx: i,
           })
@@ -824,7 +855,7 @@ export function useReports() {
           await batch.commit()
         }
 
-        reports.value = [...newlyImportedItems, ...reports.value]
+        reports.value = newlyImportedItems
       } else {
         const enriched = list.map((item, idx) => ({
           ...item,
@@ -832,12 +863,12 @@ export function useReports() {
           _sortDate: toSortableISODate(item.date),
           _orderIdx: idx,
         }))
-        reports.value = [...enriched, ...reports.value]
+        reports.value = enriched
       }
       hideLoading()
-      showToast(`✅ Đã nhập thành công ${list.length} báo cáo từ Excel!`)
+      showToast(`✅ Đã làm sạch & nhập ${list.length} báo cáo nét căng!`)
       setTimeout(() => {
-        window.alert(`✅ Đã nhập thành công ${list.length} báo cáo từ file Excel!`)
+        window.alert(`✅ Đã xoá dữ liệu trùng cũ và nhập thành công ${list.length} báo cáo chuẩn!`)
       }, 50)
     } finally {
       isImportingReports.value = false

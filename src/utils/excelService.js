@@ -8,20 +8,14 @@ function calculateDefectRate(defectQty, totalQty) {
   return q <= 0 ? '0.00%' : ((d / q) * 100).toFixed(2) + '%'
 }
 
-/**
- * Chuẩn hoá ngày tháng từ ô Excel hoặc từ tên Sheet (VD: "ISP3144AF-1A DIP (04-09-2026)")
- * Trả về định dạng chuẩn YYYY-MM-DD để sắp xếp chính xác từ trên xuống dưới
- */
 export function normalizeExcelDate(rawDate, sheetName = '') {
   const parseStrToISO = (str) => {
     if (!str) return ''
     const s = String(str).trim()
-    // YYYY-MM-DD hoặc YYYY/MM/DD
     const mISO = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/)
     if (mISO) {
       return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`
     }
-    // DD/MM/YYYY hoặc DD-MM-YYYY
     const mDMY = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
     if (mDMY) {
       let dd = parseInt(mDMY[1], 10)
@@ -35,47 +29,40 @@ export function normalizeExcelDate(rawDate, sheetName = '') {
     return ''
   }
 
-  // 1. Nếu là số serial ngày của Excel (VD: 46269)
+  // Ưu tiên lấy ngày chuẩn DD-MM-YYYY ghi trên tên Sheet (nếu có) để tránh lỗi Excel tự đảo Ngày/Tháng kiểu Mỹ
+  const fromSheet = parseStrToISO(sheetName)
+
   if (typeof rawDate === 'number' && rawDate > 20000 && rawDate < 90000) {
     const excelEpoch = new Date(Date.UTC(1899, 11, 30))
     const dt = new Date(excelEpoch.getTime() + Math.round(rawDate * 86400000))
     if (!isNaN(dt.getTime())) {
       const y = dt.getUTCFullYear()
-      const m = String(dt.getUTCMonth() + 1).padStart(2, '0')
-      const d = String(dt.getUTCDate()).padStart(2, '0')
-      return `${y}-${m}-${d}`
+      let m = dt.getUTCMonth() + 1
+      let d = dt.getUTCDate()
+      // Nếu tên Sheet ghi tháng 09 nhưng số serial Excel bị đảo thành ngày 09 tháng 12 -> tự động sửa lại đúng
+      if (fromSheet) {
+        const [, sMonth, sDay] = fromSheet.split('-').map(Number)
+        if (d === sMonth && m === sDay) {
+          m = sMonth
+          d = sDay
+        }
+      }
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     }
   }
 
-  // 2. Nếu là đối tượng Date
-  if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
-    const y = rawDate.getFullYear()
-    const m = String(rawDate.getMonth() + 1).padStart(2, '0')
-    const d = String(rawDate.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-  }
-
-  // 3. Nếu là chuỗi ngày trong ô Excel
   const fromCell = parseStrToISO(rawDate)
   if (fromCell) return fromCell
-
-  // 4. Fallback thông minh: Lấy ngày tháng ghi trong tên Sheet (VD: "ISP3144AF-1A DIP (04-09-2026)")
-  const fromSheet = parseStrToISO(sheetName)
   if (fromSheet) return fromSheet
 
   return new Date().toISOString().split('T')[0]
 }
 
-/**
- * Chuẩn hoá tên Công đoạn (Process) - Khắc phục triệt để lỗi "DIP HAND INSERT COMPONENT"
- * bị nhận nhầm thành AVR do chữ "COMPONENT" có chứa "MP" ở giữa!
- */
 export function normalizeProcessName(procVal = '', sheetName = '', respVal = '') {
   const p = String(procVal || '').trim().toUpperCase()
   const s = String(sheetName || '').trim().toUpperCase()
   const r = String(respVal || '').trim().toUpperCase()
 
-  // 1. Kiểm tra chính xác từ cột Process (Cột C) trước
   if (p.includes('DIP') || p.includes('HAND INSERT')) return 'DIP'
   if (p.includes('SMT')) return 'SMT'
   if (/\bAI\b/.test(p) || p.includes('AUTO INSERT')) return 'AI'
@@ -83,13 +70,11 @@ export function normalizeProcessName(procVal = '', sheetName = '', respVal = '')
     return 'AVR'
   }
 
-  // 2. Nếu cột Process không rõ, đối chiếu cột Người chịu trách nhiệm (VD: Production-DIP)
   if (r.includes('DIP')) return 'DIP'
   if (r.includes('SMT')) return 'SMT'
   if (/\bAI\b/.test(r) || r.includes('-AI')) return 'AI'
   if (r.includes('AVR') || /\bMP\b/.test(r)) return 'AVR'
 
-  // 3. Đối chiếu tên Sheet (VD: "ISP3144AF-1A DIP (04-09-2026)")
   if (/\bDIP\b/.test(s)) return 'DIP'
   if (/\bSMT\b/.test(s)) return 'SMT'
   if (/\bAI\b/.test(s)) return 'AI'
@@ -125,9 +110,18 @@ export async function extractImagesFromExcelZip(fileOrBuffer, onProgress = null)
       if (!mFile) return ''
       const base64 = await mFile.async('base64')
       const ext = mediaPath.split('.').pop().toLowerCase()
-      const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-      const optimized = await compressBase64Image(`data:${mime};base64,${base64}`, 1200, 0.82)   
-       mediaCache[mediaPath] = optimized
+      const mime = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg')
+      const rawDataUrl = `data:${mime};base64,${base64}`
+
+      // GIỮ NGUYÊN 100% ẢNH GỐC NẾU DƯỚI 750KB (KHÔNG NÉN QUA CANVAS ĐỂ ẢNH NÉT CĂNG 100%)
+      if (rawDataUrl.length < 750 * 1024) {
+        mediaCache[mediaPath] = rawDataUrl
+        return rawDataUrl
+      }
+
+      // Chỉ khi ảnh gốc quá nặng (> 750KB) mới thu gọn nhẹ về 1600px chất lượng 0.92
+      const optimized = await compressBase64Image(rawDataUrl, 1600, 0.92)
+      mediaCache[mediaPath] = optimized
       return optimized
     }
 
@@ -137,7 +131,7 @@ export async function extractImagesFromExcelZip(fileOrBuffer, onProgress = null)
       const [sheetName, sheetRelPath] = entries[idx]
       if (typeof onProgress === 'function') {
         const pct = 10 + Math.round(((idx + 1) / entries.length) * 35)
-        onProgress(`Đang trích xuất ảnh từ Sheet (${idx + 1}/${entries.length}): ${sheetName}`, pct)
+        onProgress(`Đang trích xuất ảnh gốc HD từ Sheet (${idx + 1}/${entries.length}): ${sheetName}`, pct)
       }
 
       const sheetFileName = sheetRelPath.split('/').pop()
@@ -169,7 +163,10 @@ export async function extractImagesFromExcelZip(fileOrBuffer, onProgress = null)
           if (mediaPath && zip.file(mediaPath)) {
             if (!rowMap[rowIdx]) rowMap[rowIdx] = []
             const dataUrl = await getMediaDataUrl(mediaPath)
-            if (dataUrl) rowMap[rowIdx].push({ url: dataUrl, name: `row_${rowIdx + 1}.jpg` })
+            // Chống gắn trùng 1 ảnh nhiều lần vào cùng 1 dòng
+            if (dataUrl && !rowMap[rowIdx].some(img => img.url === dataUrl)) {
+              rowMap[rowIdx].push({ url: dataUrl, name: `row_${rowIdx + 1}.jpg` })
+            }
           }
         }
       }
@@ -243,7 +240,6 @@ export async function parseExcelReportFile(file, onProgress = null) {
     const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
     if (!rawData || rawData.length < 5) continue
 
-    // Tự động dò dòng Header (mặc định là dòng index 3 = dòng 4 trong Excel)
     let headerRowIdx = 3
     for (let i = 0; i < Math.min(8, rawData.length); i++) {
       const rowStr = (rawData[i] || []).join(' ').toLowerCase()
@@ -282,9 +278,7 @@ export async function parseExcelReportFile(file, onProgress = null) {
         defectRate = calculateDefectRate(defQty, qty)
       }
 
-      // Chuẩn hoá Công đoạn chính xác (Không bao giờ nhầm DIP HAND INSERT COMPONENT sang AVR)
       const normProc = normalizeProcessName(procVal, sName, respVal)
-      // Chuẩn hoá Ngày tháng thực tế từ ô Excel hoặc từ tên Sheet
       const dateISO = normalizeExcelDate(rawDate, sName)
 
       const progressRaw = String(row[16] || '').toLowerCase()
@@ -292,8 +286,12 @@ export async function parseExcelReportFile(file, onProgress = null) {
       if (progressRaw.includes('open') || progressRaw.includes('chưa')) status = 'open'
       else if (progressRaw.includes('progress') || progressRaw.includes('đang')) status = 'investigating'
 
+      // Tạo ID cố định (Deterministic ID) theo Tên Sheet + Số dòng để KHÔNG BAO GIỜ NHÂN BẢN khi import nhiều lần
+      const cleanSheetKey = sName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40)
+      const deterministicId = `EX_${cleanSheetKey}_R${rIdx + 1}`
+
       allRecords.push({
-        id: 'ANOM-' + Math.floor(1000 + Math.random() * 9000),
+        id: deterministicId,
         date: dateISO,
         process: normProc,
         processRaw: procVal || normProc,
@@ -310,6 +308,7 @@ export async function parseExcelReportFile(file, onProgress = null) {
         progressNote: String(row[17] || '').trim(),
         status,
         severity: parseFloat(defectRate) >= 10 ? 'critical' : (parseFloat(defectRate) >= 5 ? 'high' : 'low'),
+        sheetSource: sName,
         images: rowImgs,
         imageUrl: rowImgs[0]?.url || '',
         orderIndex: allRecords.length,
