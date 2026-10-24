@@ -5,12 +5,12 @@ const routes = [
   {
     path: '/reports',
     name: 'reports',
-    component: () => import('./views/ReportsView.vue'),
+    component: () => import('../views/ReportsView.vue'),
   },
   {
     path: '/login',
     name: 'login',
-    component: () => import('./views/LoginView.vue'),
+    component: () => import('../views/LoginView.vue'),
   },
   { path: '/:pathMatch(.*)*', redirect: '/reports' },
 ]
